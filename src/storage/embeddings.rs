@@ -34,10 +34,7 @@ fn encode(v: &[f32]) -> Vec<u8> {
 
 fn decode(bytes: &[u8]) -> Vec<f32> {
     let (chunks, _rem) = bytes.as_chunks::<4>();
-    chunks
-        .iter()
-        .map(|c| f32::from_le_bytes(*c))
-        .collect()
+    chunks.iter().map(|c| f32::from_le_bytes(*c)).collect()
 }
 
 impl VectorStore for SqliteRepo {
