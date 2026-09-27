@@ -6,8 +6,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
+use rmcp::ServerHandler;
 use rmcp::ServiceExt;
-use rmcp::{tool, tool_router};
+use rmcp::{tool, tool_handler, tool_router};
 use serde::Deserialize;
 
 use crate::domain::commands::{
@@ -44,58 +45,81 @@ fn ok_json<T: serde::Serialize>(v: &T) -> Result<CallToolResult, rmcp::ErrorData
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct SearchArgs {
-    #[schemars(description = "Filter by topic")]
+    #[schemars(description = "Filter by topic (compound key with id)")]
     pub topic: Option<String>,
-    #[schemars(description = "FTS5 full-text query")]
+    #[schemars(description = "FTS5 full-text query over when/if/do/check text")]
     pub text: Option<String>,
-    #[schemars(description = "Semantic query (requires embedding provider)")]
+    #[schemars(description = "Semantic query (requires embedding provider; errors when unset)")]
     pub semantic: Option<String>,
     #[schemars(description = "Max results (default 20, clamped to 100)")]
     pub limit: Option<u32>,
-    #[schemars(description = "Result offset (default 0)")]
+    #[schemars(description = "Result offset for pagination (default 0)")]
     pub offset: Option<u32>,
-    #[schemars(description = "Include inactive records")]
+    #[schemars(description = "Include inactive records (deleted/forgotten always excluded)")]
     pub deep: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct AddArgs {
+    #[schemars(description = "Topic grouping for the experience")]
     pub topic: String,
+    #[schemars(
+        description = "Scenario this experience applies to, including context, conditions, and constraints"
+    )]
     pub when: String,
     #[serde(rename = "if")]
+    #[schemars(description = "Trigger(s), e.g. something happened, observed, or detected")]
     pub if_text: String,
     #[serde(rename = "do")]
+    #[schemars(
+        description = "Action(s) the agent should take / try, include steps, procedures, and instructions"
+    )]
     pub do_text: String,
+    #[schemars(
+        description = "Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action"
+    )]
     pub check: String,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct ModifyArgs {
+    #[schemars(description = "Topic of the record to modify")]
     pub topic: String,
+    #[schemars(description = "Id of the record to modify")]
     pub id: String,
+    #[schemars(description = "New scenario text (blank values ignored)")]
     pub when: Option<String>,
     #[serde(rename = "if")]
+    #[schemars(description = "New trigger text (blank values ignored)")]
     pub if_text: Option<String>,
     #[serde(rename = "do")]
+    #[schemars(description = "New action text (blank values ignored)")]
     pub do_text: Option<String>,
+    #[schemars(description = "New check text (blank values ignored)")]
     pub check: Option<String>,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct FeedbackArgs {
+    #[schemars(description = "Topic of the record")]
     pub topic: String,
+    #[schemars(description = "Id of the record")]
     pub id: String,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct DeleteArgs {
+    #[schemars(description = "Topic of the record to delete")]
     pub topic: String,
+    #[schemars(description = "Id of the record to delete")]
     pub id: String,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct ClearArgs {
+    #[schemars(description = "Clear a single topic (exactly one of topic/all required)")]
     pub topic: Option<String>,
+    #[schemars(description = "Clear all topics when true")]
     pub all: Option<bool>,
     #[schemars(description = "Must be true: destructive-action confirmation")]
     pub confirm: Option<bool>,
@@ -125,9 +149,11 @@ impl Clone for IlearnedTools {
     }
 }
 
-#[tool_router(router = tool_router, server_handler)]
+#[tool_router(router = tool_router)]
 impl IlearnedTools {
-    #[tool(description = "Search experiences by topic, full-text, or semantic query")]
+    #[tool(
+        description = "Search experiences by topic, full-text, or semantic query (deleted/forgotten excluded; inactive only with deep=true)"
+    )]
     fn search(
         &self,
         Parameters(a): Parameters<SearchArgs>,
@@ -146,7 +172,7 @@ impl IlearnedTools {
         ok_json(&out)
     }
 
-    #[tool(description = "Add a new experience")]
+    #[tool(description = "Add a new experience (sets good_count=1, state=active)")]
     fn add(&self, Parameters(a): Parameters<AddArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
         let e = self
             .svc
@@ -161,7 +187,9 @@ impl IlearnedTools {
         ok_json(&e)
     }
 
-    #[tool(description = "Modify an existing experience (at least one field required)")]
+    #[tool(
+        description = "Modify an existing experience (at least one non-blank field required; blank values ignored)"
+    )]
     fn modify(
         &self,
         Parameters(a): Parameters<ModifyArgs>,
@@ -191,7 +219,7 @@ impl IlearnedTools {
         ok_json(&serde_json::json!({"deleted": true}))
     }
 
-    #[tool(description = "Promote an experience (increments good_count)")]
+    #[tool(description = "Promote an experience (increments good_count, restores to active)")]
     fn promote(
         &self,
         Parameters(a): Parameters<FeedbackArgs>,
@@ -221,7 +249,9 @@ impl IlearnedTools {
         ok_json(&e)
     }
 
-    #[tool(description = "Clear experiences by topic or all (requires confirm=true)")]
+    #[tool(
+        description = "Clear experiences by topic or all (destructive; requires confirm=true plus exactly one of topic/all)"
+    )]
     fn clear(
         &self,
         Parameters(a): Parameters<ClearArgs>,
@@ -246,6 +276,12 @@ impl IlearnedTools {
         ok_json(&serde_json::json!({"cleared": n}))
     }
 }
+
+#[tool_handler(
+    name = "ilearned",
+    instructions = "Local-first AI agent memory: a live rule book of learned experiences (when/if/do/check) grouped by topic. Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal (destructive actions need `confirm=true`)."
+)]
+impl ServerHandler for IlearnedTools {}
 
 pub fn mcp_service(
     svc: Shared<crate::storage::SqliteRepo>,

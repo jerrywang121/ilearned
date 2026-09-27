@@ -90,6 +90,8 @@ pub struct Health {
     pub ok: bool,
 }
 
+/// Readiness probe: verifies SQLite reachable + migrations applied.
+/// Returns 200 `{"ok":true}`.
 pub async fn healthz<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
 ) -> Result<Json<Health>, ApiError> {
@@ -101,6 +103,10 @@ pub async fn healthz<R: ExperienceRepo + VectorStore>(
     Ok(Json(Health { ok: true }))
 }
 
+/// Search/browse experiences.
+/// Query params: `topic` filter, `text` FTS5 query, `semantic` vector query
+/// (needs provider, else 503), `limit` (default 20, clamped to 100),
+/// `offset` (default 0), `deep` includes inactive (deleted/forgotten never shown).
 pub async fn search<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<SearchParams>,
@@ -116,6 +122,8 @@ pub async fn search<R: ExperienceRepo + VectorStore>(
     Ok(Json(out))
 }
 
+/// Add a new experience (body: topic/when/if/do/check, all required, non-blank).
+/// Returns 201 with the created record (good_count=1, state=active).
 pub async fn add<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Json(body): Json<AddRequest>,
@@ -135,6 +143,8 @@ pub async fn add<R: ExperienceRepo + VectorStore>(
     Ok((StatusCode::CREATED, Json(e)))
 }
 
+/// Modify selected fields of an experience (body: non-blank subset of
+/// when/if/do/check; all-blank is 400). Missing/deleted id is 404.
 pub async fn modify<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
@@ -151,6 +161,8 @@ pub async fn modify<R: ExperienceRepo + VectorStore>(
     Ok(Json(e))
 }
 
+/// Soft-delete one experience (204, no body). Never-existing id is 404;
+/// already-deleted is idempotent 204.
 pub async fn delete_one<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
@@ -161,6 +173,7 @@ pub async fn delete_one<R: ExperienceRepo + VectorStore>(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Positive feedback: increments good_count, restores record to active.
 pub async fn promote<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
@@ -168,6 +181,7 @@ pub async fn promote<R: ExperienceRepo + VectorStore>(
     Ok(Json(svc.promote(&FeedbackCommand { topic, id })?))
 }
 
+/// Negative feedback: increments bad_count.
 pub async fn downgrade<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
@@ -175,6 +189,8 @@ pub async fn downgrade<R: ExperienceRepo + VectorStore>(
     Ok(Json(svc.downgrade(&FeedbackCommand { topic, id })?))
 }
 
+/// Clear by topic or all (destructive): requires `?confirm=true` plus exactly
+/// one of `?topic=X` / `?all=true`. Returns 200 `{"cleared": N}`.
 pub async fn clear<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<ClearParams>,
