@@ -24,7 +24,7 @@ pub fn build_router<R: ExperienceRepo + VectorStore + 'static>(
     svc: Arc<MemoryService<R>>,
 ) -> Router {
     crate::surfaces::http::rest::rest_routes::<R>()
-        .route("/", axum::routing::get(web_placeholder))
+        .merge(crate::surfaces::http::web::web_routes::<R>())
         .route(
             "/mcp",
             axum::routing::get(mcp_placeholder).post(mcp_placeholder),

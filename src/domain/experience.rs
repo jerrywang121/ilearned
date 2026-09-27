@@ -10,6 +10,18 @@ pub enum State {
     Forgotten,
 }
 
+impl std::fmt::Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            State::Active => "active",
+            State::Inactive => "inactive",
+            State::Deleted => "deleted",
+            State::Forgotten => "forgotten",
+        };
+        write!(f, "{s}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Experience {
     pub topic: String,
@@ -26,4 +38,16 @@ pub struct Experience {
     pub good_count: u64,
     pub bad_count: u64,
     pub state: State,
+}
+
+impl Experience {
+    /// Template-friendly lowercase state string (Askama calls methods).
+    pub fn state_str(&self) -> &'static str {
+        match self.state {
+            State::Active => "active",
+            State::Inactive => "inactive",
+            State::Deleted => "deleted",
+            State::Forgotten => "forgotten",
+        }
+    }
 }
