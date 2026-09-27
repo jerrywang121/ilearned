@@ -12,16 +12,16 @@ Agents learn by doing. `ilearned` stores those lessons as **experiences** — st
 
 Each experience records:
 
-| Field | Meaning |
-| --- | --- |
-| `topic` / `id` | Compound key; `id` is an 8-char unique id within the topic |
-| `when` | Scenario this experience applies to |
-| `if` | Trigger(s), e.g. something happened |
-| `do` | Action(s) the agent should take / try |
-| `check` | Signal(s) to verify the experience was useful |
-| `updated_at` | Creation / last-update timestamp (RFC 3339 on the wire) |
-| `good_count` / `bad_count` | Positive / negative feedback tallies |
-| `state` | `active` / `inactive` / `deleted` / `forgotten` (internal maintenance) |
+| Field                      | Meaning                                                                                                                                                                       |
+| ----------------------------| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `topic` / `id`             | Compound key; `id` is an 8-char unique id within the topic                                                                                                                    |
+| `when`                     | Scenario this experience applies to, including context, conditions, and constraints.                                                                                          |
+| `if`                       | Trigger(s), e.g. something happened, observed, or detected.                                                                                                                   |
+| `do`                       | Action(s) the agent should take / try, include steps, procedures, and instructions.                                                                                           |
+| `check`                    | Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action. |
+| `updated_at`               | Creation / last-update timestamp (RFC 3339 on the wire)                                                                                                                       |
+| `good_count` / `bad_count` | Positive / negative feedback tallies                                                                                                                                          |
+| `state`                    | `active` / `inactive` / `deleted` / `forgotten` (internal maintenance)                                                                                                        |
 
 All behavior lives in one application service (`MemoryService`); CLI, REST, web, and MCP surfaces are thin adapters over it.
 
