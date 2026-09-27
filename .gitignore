@@ -71,9 +71,9 @@ instance/
 # Sphinx documentation
 docs/_build/
 
-# PyBuilder
-.pybuilder/
-target/
+# Rust
+/target/
+.serena/
 .worktrees/
 
 # Jupyter Notebook
