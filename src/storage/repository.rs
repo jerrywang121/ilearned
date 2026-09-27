@@ -3,10 +3,11 @@ use rusqlite::{params, OptionalExtension, Row};
 
 use crate::domain::commands::{ClearCommand, SearchQuery};
 use crate::domain::experience::{Experience, State};
-use crate::domain::lifecycle::is_eligible;
+use crate::domain::lifecycle::{is_eligible, LifecycleConfig};
 use crate::error::AppError;
 
-use super::sqlite::{from_epoch, is_fts_syntax_error, open_db, to_epoch, Db};
+use super::lifecycle::reconcile_before_op;
+use super::sqlite::{from_epoch, is_fts_syntax_error, open_db, to_epoch};
 
 fn parse_state(s: &str) -> Result<State, AppError> {
     match s {
@@ -67,11 +68,20 @@ pub trait ExperienceRepo: Send + Sync {
     ) -> Result<Vec<(Experience, f32)>, AppError>;
     /// Paginated browse ordered by updated_at DESC (service applies limit/offset).
     fn browse(&self, topic: Option<&str>, deep: bool) -> Result<Vec<Experience>, AppError>;
+    /// Run lifecycle reconcile + purge (implemented via storage::lifecycle).
+    fn reconcile(&self, now: DateTime<Utc>, cfg: &LifecycleConfig) -> Result<(), AppError> {
+        reconcile_before_op(&self.conn_ref(), now, cfg)
+    }
+    /// Borrow the underlying connection for lifecycle transactions.
+    /// Default panics; SqliteRepo overrides.
+    fn conn_ref(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        panic!("conn_ref not implemented")
+    }
 }
 
 #[derive(Clone)]
 pub struct SqliteRepo {
-    db: Db,
+    db: super::sqlite::Db,
 }
 
 impl SqliteRepo {
@@ -89,6 +99,10 @@ impl SqliteRepo {
 }
 
 impl ExperienceRepo for SqliteRepo {
+    fn conn_ref(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.db.lock().expect("db lock")
+    }
+
     fn insert(&self, e: &Experience) -> Result<(), AppError> {
         let db = self.db.lock().expect("db lock");
         db.execute(
