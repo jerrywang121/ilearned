@@ -99,3 +99,48 @@ fn clear_requires_topic_or_all() {
     // clap error => exit code 2.
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn clear_accepts_yes_with_target() {
+    let dir = TempDir::new().unwrap();
+    let db = db_arg(&dir);
+    let out = Command::new(bin())
+        .args([
+            "--db", &db, "--json", "add", "--topic", "t", "--when", "w", "--if", "i", "--do", "d",
+            "--check", "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    // --topic combined with --yes must be accepted (not a clap conflict).
+    let out = Command::new(bin())
+        .args(["--db", &db, "--json", "clear", "--topic", "t", "--yes"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "clear --topic --yes rejected: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = Command::new(bin())
+        .args([
+            "--db", &db, "--json", "add", "--topic", "t", "--when", "w", "--if", "i", "--do", "d",
+            "--check", "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    // --all combined with --yes must be accepted (not a clap conflict).
+    let out = Command::new(bin())
+        .args(["--db", &db, "--json", "clear", "--all", "--yes"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "clear --all --yes rejected: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

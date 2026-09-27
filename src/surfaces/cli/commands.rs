@@ -157,13 +157,12 @@ pub struct IdArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[group(required = true, multiple = false)]
 pub struct ClearArgs {
     /// Clear a single topic.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "all", required_unless_present = "all")]
     pub topic: Option<String>,
     /// Clear all topics.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "topic", required_unless_present = "topic")]
     pub all: bool,
     /// Skip the interactive confirmation prompt.
     #[arg(long)]
