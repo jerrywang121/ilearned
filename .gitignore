@@ -3,6 +3,7 @@
 
 # Local tool state
 .serena/
+.ilearned/
 
 # Git worktrees
 .worktrees/

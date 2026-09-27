@@ -16,6 +16,7 @@ ilearned promote --topic TOPIC --id ID
 ilearned downgrade --topic TOPIC --id ID
 ilearned clear (--topic TOPIC | --all) [--yes]
 ilearned serve [--bind ADDR]
+ilearned mcp
 ```
 
 - Global flags: `--db PATH` (`ILEARNED_DB`, default `./ilearned.db`),
@@ -45,6 +46,12 @@ ilearned serve [--bind ADDR]
   violations exit 2).
 - `serve` starts REST + web + MCP on one listener. `--bind` on the `serve`
   subcommand wins over the global `--bind`.
+- `mcp` runs the same 7 tools as an MCP server over stdio (stdin/stdout)
+  for harness use. It ignores `--bind`/`--json`; stdout stays pure
+  JSON-RPC (logs/errors go to stderr). The DB defaults to
+  `./.ilearned/ilearned.db` under the working directory when `--db` /
+  `ILEARNED_DB` are unset (parent dirs are created on open). See
+  [docs/mcp.md](docs/mcp.md).
 - `delete` on a never-existing `(topic, id)` exits 1 (not-found);
   deleting an already-deleted record is idempotent and succeeds.
 - Failures write a structured error to stderr (`{"error": "..."}` with

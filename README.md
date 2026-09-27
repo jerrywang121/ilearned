@@ -27,7 +27,7 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 
 ## Features
 
-- **One binary, four surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`).
+- **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use.
 - **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`).
 - **Lifecycle management** — `active` (default 60d) → `inactive` → `forgotten` (default 120d), with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`.
 - **Feedback loop** — `promote`/`downgrade` bump `good_count`/`bad_count` and restore records to active life.
@@ -81,6 +81,7 @@ ilearned promote --topic TOPIC --id ID
 ilearned downgrade --topic TOPIC --id ID
 ilearned clear (--topic TOPIC | --all) [--yes]
 ilearned serve [--bind ADDR]
+ilearned mcp
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
@@ -112,6 +113,14 @@ Server-rendered HTML, no JavaScript: search/browse at `/`, record detail, add/ed
 
 Streamable HTTP at `/mcp` with seven tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`). Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
 
+For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout), defaulting to a project-local `./.ilearned/ilearned.db` when `--db`/`ILEARNED_DB` are unset:
+
+```json
+{ "mcp": { "ilearned": { "type": "local",
+  "command": ["ilearned", "mcp"],
+  "enabled": true } } }
+```
+
 ## Configuration
 
 Precedence: **flags > `ILEARNED_*` env > defaults.**
@@ -132,7 +141,7 @@ Embedding failure on `add`/`modify` never rolls back the canonical write; a sema
 
 ```text
 ┌──────────────────────────────────────────────────┐
-│ Adapters: CLI · REST · Web · HTTP MCP            │
+│ Adapters: CLI · REST · Web · HTTP MCP · stdio MCP│
 └────────────────────────┬─────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────┐

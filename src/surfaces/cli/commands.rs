@@ -7,7 +7,8 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "ilearned", version)]
 pub struct Cli {
-    /// SQLite database path (env ILEARNED_DB, default ./ilearned.db).
+    /// SQLite database path (env ILEARNED_DB, default ./ilearned.db,
+    /// ./.ilearned/ilearned.db for `mcp`).
     #[arg(long, global = true, env = "ILEARNED_DB")]
     pub db: Option<PathBuf>,
     /// Bind address for `serve` (env ILEARNED_BIND).
@@ -55,6 +56,10 @@ pub enum Commands {
     Downgrade(IdArgs),
     Clear(ClearArgs),
     Serve(ServeArgs),
+    /// Run as an MCP server over stdio (stdin/stdout) for harness use.
+    /// DB defaults to `./.ilearned/ilearned.db` when `--db`/`ILEARNED_DB`
+    /// are unset; stdout stays pure JSON-RPC (logs go to stderr).
+    Mcp,
 }
 
 #[derive(Debug, Clone, Args)]

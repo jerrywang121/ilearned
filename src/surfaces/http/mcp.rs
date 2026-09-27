@@ -6,6 +6,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
+use rmcp::ServiceExt;
 use rmcp::{tool, tool_router};
 use serde::Deserialize;
 
@@ -264,4 +265,20 @@ pub fn mcp_service(
 pub fn mcp_router(svc: Shared<crate::storage::SqliteRepo>) -> Router<()> {
     let service = mcp_service(svc);
     Router::new().nest_service("/mcp", service)
+}
+
+/// Serve MCP over stdio (stdin/stdout) for harness use. Stdout stays pure
+/// JSON-RPC: all logging/errors go to stderr, never stdout.
+pub async fn serve_stdio(
+    svc: Arc<crate::application::MemoryService<crate::storage::SqliteRepo>>,
+) -> Result<(), crate::error::AppError> {
+    let running = IlearnedTools::new(svc)
+        .serve(rmcp::transport::stdio())
+        .await
+        .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+    running
+        .waiting()
+        .await
+        .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+    Ok(())
 }

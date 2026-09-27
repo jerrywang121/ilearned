@@ -5,7 +5,7 @@ initialization, migrations, and all surface adapters.
 
 ```text
 ┌──────────────────────────────────────────────────┐
-│ Adapters: CLI · REST · Web · HTTP MCP            │
+│ Adapters: CLI · REST · Web · HTTP MCP · stdio MCP│
 └────────────────────────┬─────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────┐
@@ -40,7 +40,9 @@ initialization, migrations, and all surface adapters.
 - `embedding` — `EmbeddingProvider` trait + OpenAI-compatible HTTP client +
   deterministic fake (tests) and failing (error-path tests) providers.
 - `surfaces/cli`, `surfaces/http` — thin adapters. No SQL, lifecycle
-  transitions, or ranking logic.
+  transitions, or ranking logic. The stdio MCP server (`ilearned mcp`)
+  reuses the same `IlearnedTools` type and service as HTTP MCP; only the
+  transport differs (stdio instead of streamable HTTP).
 
 ## HTTP layer shape
 
@@ -59,7 +61,9 @@ initialization, migrations, and all surface adapters.
 ## Key invariants
 
 - One binary: CLI subcommands + `serve` mode; REST + web + MCP share one
-  listener (default `127.0.0.1:8787`).
+  listener (default `127.0.0.1:8787`); `ilearned mcp` serves the same MCP
+  tools over stdio with a project-local default DB
+  (`./.ilearned/ilearned.db`).
 - Single-user local-first; no authentication.
 - Search never returns `deleted`/`forgotten` (even with `deep=true`);
   `inactive` only when `deep=true`.
