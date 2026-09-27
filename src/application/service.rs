@@ -1,12 +1,18 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::application::ranking::{cosine, rrf_fuse, RRF_K};
 use crate::domain::commands::{
     AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
 };
 use crate::domain::experience::{Experience, State};
 use crate::domain::lifecycle::LifecycleConfig;
+use crate::embedding::provider::{DynProvider, EmbeddingProvider};
 use crate::error::AppError;
+use crate::storage::embeddings::VectorStore;
 use crate::storage::repository::ExperienceRepo;
 
 pub const MAX_LIMIT: u32 = 100;
@@ -15,11 +21,21 @@ pub const MAX_LIMIT: u32 = 100;
 pub struct MemoryService<R> {
     repo: R,
     lifecycle: LifecycleConfig,
+    embedding: Option<DynProvider>,
 }
 
-impl<R: ExperienceRepo> MemoryService<R> {
+impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     pub fn new(repo: R, lifecycle: LifecycleConfig) -> Self {
-        Self { repo, lifecycle }
+        Self {
+            repo,
+            lifecycle,
+            embedding: None,
+        }
+    }
+
+    pub fn with_embedding_provider<P: EmbeddingProvider + 'static>(mut self, p: P) -> Self {
+        self.embedding = Some(Arc::new(p));
+        self
     }
 
     /// Test escape hatch: direct repo access.
@@ -28,9 +44,52 @@ impl<R: ExperienceRepo> MemoryService<R> {
     }
 
     fn reconcile(&self) -> Result<(), AppError> {
-        // SqliteRepo-specific: downcast via the conn() escape hatch is not
-        // object-safe, so lifecycle runs through a repository-provided hook.
         self.repo.reconcile(Utc::now(), &self.lifecycle)
+    }
+
+    /// Block on an async embed from sync code. Runs the future on a fresh
+    /// current-thread runtime in a helper thread so this works both inside
+    /// an axum handler runtime and in plain sync contexts (CLI, tests).
+    fn block_embed(&self, text: &str) -> Result<Vec<f32>, AppError> {
+        let provider = self.embedding.clone().ok_or_else(|| {
+            AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
+        })?;
+        let text = text.to_string();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+            rt.block_on(provider.embed(&text))
+        })
+        .join()
+        .map_err(|_| AppError::Internal("embedding thread panicked".to_string()))?
+    }
+
+    fn doc_text(e: &Experience) -> String {
+        format!(
+            "{} {} {} {}",
+            e.when_text, e.if_text, e.do_text, e.check_text
+        )
+    }
+
+    /// Best-effort (re)embedding after a canonical write. Failures are
+    /// logged; the canonical write stands.
+    fn best_effort_embed(&self, e: &Experience) {
+        if let Some(p) = self.embedding.clone() {
+            let text = Self::doc_text(e);
+            let model = p.model_id().to_string();
+            let topic = e.topic.clone();
+            let id = e.id.clone();
+            match self.block_embed(&text) {
+                Ok(v) => {
+                    if let Err(err) = self.repo.upsert_vector(&topic, &id, &model, &v) {
+                        eprintln!("ilearned: vector upsert failed: {err}");
+                    }
+                }
+                Err(err) => eprintln!("ilearned: embedding failed (canonical write kept): {err}"),
+            }
+        }
     }
 
     pub fn add(&self, cmd: AddCommand) -> Result<Experience, AppError> {
@@ -52,7 +111,10 @@ impl<R: ExperienceRepo> MemoryService<R> {
                 state: State::Active,
             };
             match self.repo.insert(&e) {
-                Ok(()) => return Ok(e),
+                Ok(()) => {
+                    self.best_effort_embed(&e);
+                    return Ok(e);
+                }
                 Err(AppError::Storage(_)) => continue, // PK collision: retry once
                 Err(e) => return Err(e),
             }
@@ -107,6 +169,7 @@ impl<R: ExperienceRepo> MemoryService<R> {
         }
         let e = self.restore(e);
         self.repo.update(&e)?;
+        self.best_effort_embed(&e);
         Ok(e)
     }
 
@@ -156,34 +219,120 @@ impl<R: ExperienceRepo> MemoryService<R> {
         self.repo.clear(cmd, Utc::now())
     }
 
-    pub fn search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
-        self.reconcile()?;
-        if q.semantic.is_some() {
-            // Semantic path lands in Task 4; typed error, never silent fallback.
-            return Err(AppError::EmbeddingUnavailable(
-                "semantic search requires an embedding provider (see Task 4)".to_string(),
-            ));
-        }
-        let mut out: Vec<Experience> = if let Some(text) = q.text.as_deref() {
-            self.repo
-                .search_fts(text, q.topic.as_deref(), q.deep)?
-                .into_iter()
-                .map(|(e, _)| e)
-                .filter_map(|e| self.visible(e, q.deep))
-                .collect()
-        } else {
-            self.repo
-                .browse(q.topic.as_deref(), q.deep)?
-                .into_iter()
-                .filter_map(|e| self.visible(e, q.deep))
-                .collect()
-        };
+    fn paginate(&self, mut out: Vec<Experience>, q: &SearchQuery) -> Vec<Experience> {
         let limit = q.limit.min(MAX_LIMIT) as usize;
         let offset = q.offset as usize;
         if offset >= out.len() || limit == 0 {
-            return Ok(vec![]);
+            return vec![];
         }
         out.truncate(offset + limit);
-        Ok(out[offset..].to_vec())
+        out[offset..].to_vec()
+    }
+
+    /// Semantic-only search: cosine over stored vectors of eligible records.
+    fn search_semantic(
+        &self,
+        query_text: &str,
+        q: &SearchQuery,
+    ) -> Result<Vec<Experience>, AppError> {
+        let provider = self.embedding.clone().ok_or_else(|| {
+            AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
+        })?;
+        // Embed failure => typed error, never a silent text fallback.
+        let qv = self.block_embed(query_text)?;
+        let model = provider.model_id().to_string();
+        let stored = self.repo.load_vectors(q.topic.as_deref(), &model)?;
+        let ids: HashSet<(String, String)> = stored
+            .iter()
+            .map(|(t, i, _)| (t.clone(), i.clone()))
+            .collect();
+        let mut scored: Vec<(Experience, f32)> = Vec::new();
+        for (t, i) in ids {
+            if let Some(e) = self.repo.get(&t, &i)? {
+                if self.visible(e.clone(), q.deep).is_none() {
+                    continue;
+                }
+                let v = stored
+                    .iter()
+                    .find(|(st, si, _)| st == &t && si == &i)
+                    .map(|(_, _, v)| v)
+                    .expect("id came from stored");
+                scored.push((e, cosine(&qv, v)));
+            }
+        }
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.0.updated_at.cmp(&a.0.updated_at))
+                .then_with(|| a.0.topic.cmp(&b.0.topic))
+                .then_with(|| a.0.id.cmp(&b.0.id))
+        });
+        Ok(scored.into_iter().map(|(e, _)| e).collect())
+    }
+
+    pub fn search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
+        self.reconcile()?;
+        let text = q.text.as_deref().filter(|t| !t.trim().is_empty());
+        let semantic = q.semantic.as_deref().filter(|s| !s.trim().is_empty());
+        match (text, semantic) {
+            (None, None) => {
+                let out: Vec<Experience> = self
+                    .repo
+                    .browse(q.topic.as_deref(), q.deep)?
+                    .into_iter()
+                    .filter_map(|e| self.visible(e, q.deep))
+                    .collect();
+                Ok(self.paginate(out, q))
+            }
+            (Some(t), None) => {
+                let out: Vec<Experience> = self
+                    .repo
+                    .search_fts(t, q.topic.as_deref(), q.deep)?
+                    .into_iter()
+                    .map(|(e, _)| e)
+                    .filter_map(|e| self.visible(e, q.deep))
+                    .collect();
+                Ok(self.paginate(out, q))
+            }
+            (None, Some(s)) => {
+                let out = self.search_semantic(s, q)?;
+                Ok(self.paginate(out, q))
+            }
+            (Some(t), Some(s)) => {
+                // Combined: both rankings must succeed; embed failure is a
+                // typed error, never a silent downgrade to text-only.
+                let text_hits = self.repo.search_fts(t, q.topic.as_deref(), q.deep)?;
+                let sem_hits = self.search_semantic(s, q)?;
+                let text_keys: Vec<(String, String)> = text_hits
+                    .iter()
+                    .map(|(e, _)| (e.topic.clone(), e.id.clone()))
+                    .collect();
+                let sem_keys: Vec<(String, String)> = sem_hits
+                    .iter()
+                    .map(|e| (e.topic.clone(), e.id.clone()))
+                    .collect();
+                let fused = rrf_fuse(&text_keys, &sem_keys, RRF_K);
+                let mut by_key: HashMap<(String, String), Experience> = HashMap::new();
+                for (e, _) in text_hits {
+                    by_key.entry((e.topic.clone(), e.id.clone())).or_insert(e);
+                }
+                for e in sem_hits {
+                    by_key.entry((e.topic.clone(), e.id.clone())).or_insert(e);
+                }
+                let mut ordered: Vec<(Experience, f32)> = fused
+                    .into_iter()
+                    .filter_map(|(k, score)| by_key.remove(&k).map(|e| (e, score)))
+                    .filter(|(e, _)| self.visible(e.clone(), q.deep).is_some())
+                    .collect();
+                ordered.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| b.0.updated_at.cmp(&a.0.updated_at))
+                        .then_with(|| a.0.topic.cmp(&b.0.topic))
+                        .then_with(|| a.0.id.cmp(&b.0.id))
+                });
+                Ok(self.paginate(ordered.into_iter().map(|(e, _)| e).collect(), q))
+            }
+        }
     }
 }

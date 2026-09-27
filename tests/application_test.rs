@@ -158,3 +158,81 @@ fn semantic_without_provider_is_typed() {
         Err(ilearned::AppError::EmbeddingUnavailable(_))
     ));
 }
+
+#[test]
+fn semantic_ranks_by_cosine() {
+    use ilearned::embedding::FakeEmbeddingProvider;
+    let (_d, s) = svc();
+    let s = s.with_embedding_provider(FakeEmbeddingProvider::new());
+    // Fake embeds by token hash; identical text => cosine 1.0 on top.
+    let target = s.add(add_cmd("t")).unwrap();
+    s.add(AddCommand {
+        topic: "t".to_string(),
+        when_text: "completely different words here".to_string(),
+        if_text: "nothing shared xyz".to_string(),
+        do_text: "other action qqq".to_string(),
+        check_text: "other signal www".to_string(),
+    })
+    .unwrap();
+    let hits = s
+        .search(&SearchQuery {
+            semantic: Some("when deploy fails alert fires restart worker health ok".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].id, target.id);
+}
+
+#[test]
+fn rrf_is_deterministic() {
+    use ilearned::embedding::FakeEmbeddingProvider;
+    let (_d, s) = svc();
+    let s = s.with_embedding_provider(FakeEmbeddingProvider::new());
+    s.add(add_cmd("t")).unwrap();
+    s.add(add_cmd("t")).unwrap();
+    let q = SearchQuery {
+        text: Some("deploy".to_string()),
+        semantic: Some("deploy worker".to_string()),
+        ..Default::default()
+    };
+    let first = s.search(&q).unwrap();
+    let second = s.search(&q).unwrap();
+    assert_eq!(
+        first.iter().map(|e| &e.id).collect::<Vec<_>>(),
+        second.iter().map(|e| &e.id).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn combined_search_embed_failure_is_typed() {
+    use ilearned::embedding::FailingEmbeddingProvider;
+    let (_d, s) = svc();
+    let s = s.with_embedding_provider(FailingEmbeddingProvider);
+    s.add(add_cmd("t")).unwrap();
+    // add() itself must succeed (best-effort); search must fail typed.
+    assert!(matches!(
+        s.search(&SearchQuery {
+            text: Some("deploy".to_owned()),
+            semantic: Some("deploy".to_owned()),
+            ..Default::default()
+        }),
+        Err(ilearned::AppError::EmbeddingUnavailable(_))
+    ));
+}
+
+#[test]
+fn add_succeeds_when_embed_fails() {
+    use ilearned::embedding::FailingEmbeddingProvider;
+    let (_d, s) = svc();
+    let s = s.with_embedding_provider(FailingEmbeddingProvider);
+    let e = s.add(add_cmd("t")).unwrap();
+    assert_eq!(e.state, State::Active);
+    let got = s
+        .search(&SearchQuery {
+            topic: Some("t".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(got.iter().any(|x| x.id == e.id));
+}
