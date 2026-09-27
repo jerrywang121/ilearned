@@ -212,8 +212,8 @@ pub fn rest_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared
         .route("/api/v1/experiences", delete(clear::<R>))
 }
 
-pub async fn serve<R: ExperienceRepo + VectorStore + 'static>(
-    svc: MemoryService<R>,
+pub async fn serve(
+    svc: MemoryService<crate::storage::SqliteRepo>,
     bind: SocketAddr,
 ) -> Result<(), AppError> {
     let app = crate::surfaces::http::server::build_router(Arc::new(svc));
