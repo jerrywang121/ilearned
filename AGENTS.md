@@ -17,6 +17,9 @@ lifecycle transitions, or ranking logic.
   are ignored).
 - `delete` on a never-existing id is `NotFound`; deleting an
   already-deleted record is idempotent success.
+- Explicit `(topic, id)` reads go through `MemoryService::get` (sole
+  entry): reconcile-first, `deleted`/missing read as `NotFound`;
+  `forgotten`/`inactive` stay reachable (search still hides them).
 - Search excludes `deleted`/`forgotten` always; `inactive` only with
   `deep=true`.
 - SQLite `when_text/if_text/do_text/check_text`, INTEGER epoch timestamps;

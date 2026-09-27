@@ -21,7 +21,7 @@ Each experience records:
 | `check` | Signal(s) to verify the experience was useful |
 | `updated_at` | Creation / last-update timestamp (RFC 3339 on the wire) |
 | `good_count` / `bad_count` | Positive / negative feedback tallies |
-| `state` | `active` \| `inactive` \| `deleted` \| `forgotten` (internal maintenance) |
+| `state` | `active` / `inactive` / `deleted` / `forgotten` (internal maintenance) |
 
 All behavior lives in one application service (`MemoryService`); CLI, REST, web, and MCP surfaces are thin adapters over it.
 
@@ -30,7 +30,7 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 - **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use.
 - **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`).
 - **Lifecycle management** — `active` (default 60d) → `inactive` → `forgotten` (default 120d), with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`.
-- **Feedback loop** — `promote`/`downgrade` bump `good_count`/`bad_count` and restore records to active life.
+- **Feedback loop** — `promote`/`downgrade` bump `good_count`/`bad_count`; `modify`/`promote`/`downgrade` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life.
 - **Local-first** — single-user, SQLite (WAL) backend, no auth, no JS build.
 
 ## Installation
@@ -133,9 +133,20 @@ Precedence: **flags > `ILEARNED_*` env > defaults.**
 | Forget period (days) | `--forget-days` | `ILEARNED_FORGET_DAYS` | `120` |
 | Retention (days) | `--retention-days` | `ILEARNED_RETENTION_DAYS` | `60` |
 | Embedding endpoint/model/key | `--embed-endpoint/model/api-key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
-| Embedding dims/timeout | `--embed-dims/timeout-secs` | `ILEARNED_EMBED_*` | `1536` / `30s` |
+| Embedding dims/timeout | `--embed-dims/timeout-secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims is informational only, never validated) |
+| Search cap | — (code constant `MAX_LIMIT`) | — | `100` (larger `limit` clamps, no error) |
 
-Embedding failure on `add`/`modify` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only.
+`MAX_LIMIT` is a compile-time constant in `application::service`; there is
+no flag/env knob — a deliberate follow-up (see Roadmap). Semantic search
+stores one vector per experience per embedding `model` (`embeddings`
+keyed `(topic,id,model)`); **changing `--embed-model` or `--embed-dims`
+orphans existing vectors** — old-model rows are never re-embedded or
+compared, and the new model only sees records written (or modified) after
+the switch. To migrate, re-embed after switching (e.g. `modify` each record
+with a real field change — blank-only `modify` is rejected), or wipe vectors by deleting the rows for the old model.
+There is no automatic migration path yet.
+
+Embedding failure on `add`/`modify` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.
 
 ## Architecture
 
@@ -176,9 +187,11 @@ All four must pass before committing. See [docs/development.md](docs/development
 
 ## Roadmap
 
+Tracked as follow-ups in [docs/TODO.md](docs/TODO.md):
+
+- Documented maximum search limit tuning (`MAX_LIMIT`)
 - Embedding model/dimension migration path
 - Backup/export story for the local SQLite file
-- Tunable `MAX_LIMIT` and richer web search filters
 
 ## License
 

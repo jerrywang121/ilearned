@@ -19,10 +19,12 @@ cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-All four must pass before committing. Tests that spawn the server
-(`rest_test`, `web_test`, `mcp_test`) build the real binary via
-`CARGO_BIN_EXE_ilearned` and bind ephemeral loopback ports; MCP tests
-perform the full `initialize` → `notifications/initialized` handshake.
+All four must pass before committing. Tests that spawn the binary
+(`cli_test`, `rest_test`, `web_test`, `mcp_test`, `mcp_stdio_test`) build
+the real binary via `CARGO_BIN_EXE_ilearned`; server tests bind ephemeral
+loopback ports. MCP tests perform the full `initialize` →
+`notifications/initialized` handshake (HTTP with session headers, stdio
+with plain JSON-RPC lines).
 
 ## Notes
 

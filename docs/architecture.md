@@ -65,6 +65,9 @@ initialization, migrations, and all surface adapters.
   tools over stdio with a project-local default DB
   (`./.ilearned/ilearned.db`).
 - Single-user local-first; no authentication.
+- Explicit `(topic, id)` reads go through `MemoryService::get` (sole entry):
+  reconciles first, `deleted`/missing read as `NotFound`; `forgotten` and
+  `inactive` remain reachable here (search still hides them).
 - Search never returns `deleted`/`forgotten` (even with `deep=true`);
   `inactive` only when `deep=true`.
 - Embedding failure on `add`/`modify` never rolls back the canonical write.

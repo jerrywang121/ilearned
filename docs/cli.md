@@ -36,6 +36,11 @@ ilearned mcp
   semantic queries exit 3.
 - `add` prints the created `Experience` (JSON: the record; human: one-line
   summary plus fields). `search` prints a JSON array in `--json` mode.
+  `limit` defaults to 20 and is clamped to `MAX_LIMIT=100` service-side
+  (larger values behave as 100, no error); `limit=0` and over-range
+  `offset` return `[]`. `text` + `semantic` together fuse both rankings
+  with RRF (`k=60`); a semantic query without a provider (or with a
+  failing provider) exits 3 instead of silently degrading to text-only.
 - `modify` requires at least one non-blank field of
   `--when/--if/--do/--check` (blank-only values are ignored, so all-blank
   is rejected).
