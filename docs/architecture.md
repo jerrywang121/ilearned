@@ -31,11 +31,27 @@ initialization, migrations, and all surface adapters.
   No transport or database dependencies.
 - `application` — `MemoryService` implementing `search`, `add`, `modify`,
   `delete`, `promote`, `downgrade`, `clear`. The only entry point for adapters.
+  Generic over `R: ExperienceRepo + VectorStore`; semantic search, cosine,
+  and RRF (`k=60`) live here.
 - `storage` — SQLite connection, migrations, repositories, FTS5 queries,
   embedding persistence, lifecycle reconciliation, purge transactions.
-- `embedding` — optional embedding interface + OpenAI-compatible HTTP client.
+- `embedding` — `EmbeddingProvider` trait + OpenAI-compatible HTTP client +
+  deterministic fake (tests) and failing (error-path tests) providers.
 - `surfaces/cli`, `surfaces/http` — thin adapters. No SQL, lifecycle
   transitions, or ranking logic.
+
+## HTTP layer shape
+
+- One listener serves three sub-routers merged after each takes state:
+  REST + web share `Arc<MemoryService<SqliteRepo>>`; MCP builds a stateless
+  `Router<()>` from the same `Arc` (axum `nest_service` cannot inject
+  state, and rmcp macros require a non-generic tools impl, so MCP and the
+  `serve` path are concrete over `SqliteRepo`).
+- Web templates are inline Askama `#[template(source = ...)]` (no
+  `templates/` directory); auto-escaping is on.
+- `main.rs` currently constructs no embedding provider, so semantic search
+  returns `EmbeddingUnavailable` on every surface until provider wiring
+  lands (follow-up in `TODO.md`).
 
 ## Key invariants
 

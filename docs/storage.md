@@ -1,16 +1,30 @@
 # Storage
 
 - SQLite at configurable path (default `./ilearned.db`), WAL mode,
-  compound primary key `(topic, id)`.
+  `busy_timeout=5000`, compound primary key `(topic, id)`. `open_db`
+  creates parent dirs and records `schema_migrations(version=1)`.
 - `experiences` columns: `topic, id, when_text, if_text, do_text,
-  check_text, updated_at (INTEGER epoch), good_count, bad_count,
+  check_text, updated_at (INTEGER epoch seconds), good_count, bad_count,
   state ('active'|'inactive'|'deleted'|'forgotten'), retention_started_at
   (INTEGER, nullable, internal — never in the public shape)`.
-- FTS5 table over `topic, when_text, if_text, do_text, check_text` with
-  sync triggers + rebuild path; BM25 rank; topic filter outside FTS;
-  lifecycle eligibility applied after match.
-- `embeddings(topic, id, model, dims, vec)` keyed `(topic,id,model)`,
-  cascade-deleted with the experience.
-- Lifecycle: reconcile before every op (strict `>`: `>60d`→inactive,
-  `>120d`→forgotten + retention start); purge `deleted`/`forgotten`
-  with retention start `>60d` (incl. FTS + embedding rows).
+- FTS5 table `experiences_fts` over
+  `topic, when_text, if_text, do_text, check_text` with after-insert/
+  after-delete/after-update sync triggers plus a `rebuild_fts` recovery
+  path; BM25 rank; topic filter applied outside the `MATCH` expression;
+  lifecycle eligibility applied after the match. Invalid `MATCH` syntax
+  maps to `AppError::InvalidFtsSyntax` (HTTP 400 / CLI exit 2).
+- `embeddings(topic, id, model, dims, vec BLOB LE-f32)` keyed
+  `(topic,id,model)`. The table is created lazily by `ensure_table` on
+  first vector op — it is NOT part of the base migrations and has NO
+  foreign key to `experiences`; embedding rows for expired records are
+  removed explicitly by `purge_expired` alongside the experience and FTS
+  rows (there is no cascade).
+- `update()` clears `retention_started_at` (every canonical update restores
+  the record to active life); `soft_delete()`/`clear()` set
+  `state='deleted'` + fresh `updated_at` + retention start. `clear` skips
+  already-deleted rows and returns the touched count.
+- Lifecycle (`reconcile_before_op`, single `BEGIN IMMEDIATE` transaction):
+  reconcile before every op (strict `>`: `>60d`→inactive,
+  `>120d`→forgotten + retention start via `COALESCE`); then
+  `purge_expired` physically removes `deleted`/`forgotten` rows whose
+  retention start is strictly `>60d` old.
