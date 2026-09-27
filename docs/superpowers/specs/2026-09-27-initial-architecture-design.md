@@ -29,7 +29,7 @@ The first release will:
 The first release will not add multi-user ownership, accounts, authentication,
 separate service processes, a mandatory embedding provider, a bundled local
 embedding model, or a JavaScript frontend build pipeline. It will not require a
-SQLite vector extension: the initial semantic implementation will use an
+SQLite vector extension: the initial semantic implementation will use a
 replaceable vector-store interface backed by SQLite and application-side cosine
 scoring.
 
@@ -40,14 +40,25 @@ initialization, migrations, and all surface adapters. The dependency direction
 is:
 
 ```text
-CLI ───────────────┐
-REST handlers ─────┤
-Web handlers ──────┼──> application service ──> domain types/rules
-MCP handlers ──────┘              │                       │
-                                  ├──> repositories ──────┤
-                                  └──> embedding provider ┘
-                                           │
-                                        SQLite
+┌──────────────────────────────────────────────────┐
+│ Adapters: CLI · REST · Web · HTTP MCP            │
+└────────────────────────┬─────────────────────────┘
+                         ▼
+┌──────────────────────────────────────────────────┐
+│ Application service (MemoryService)              │
+└──────┬──────────────────────────────┬────────────┘
+       ▼                              ▼
+┌──────────────────┐        ┌──────────────────────┐
+│ Domain           │        │ Ports                │
+│ Experience       │◄───────│ ExperienceRepo       │
+│ State, rules     │◄───────│ EmbeddingProvider    │
+└──────────────────┘        └──────────┬───────────┘
+                                       ▼
+                            ┌──────────────────────┐
+                            │ SQLite + optional    │
+                            │ OpenAI-compatible    │
+                            │ embeddings HTTP API  │
+                            └──────────────────────┘
 ```
 
 The source layout will keep these responsibilities visible:
@@ -113,7 +124,9 @@ The public experience shape is:
 
 SQLite will use `when_text`, `if_text`, `do_text`, and `check_text` column names
 to avoid SQL keyword conflicts; transport and domain serialization uses the
-README names. The canonical table has a compound primary key `(topic, id)`.
+README names. `updated_at` and `retention_started_at` are stored as INTEGER
+Unix epoch seconds in UTC and serialized as RFC 3339 (ISO 8601) strings in
+JSON and HTML. The canonical table has a compound primary key `(topic, id)`.
 An internal nullable `retention_started_at` column records when an experience
 entered `deleted` or `forgotten`; it is not exposed as part of the public
 experience shape and prevents an old `updated_at` from causing an immediately
@@ -123,10 +136,15 @@ The state rules are:
 
 1. `add` generates an id, requires `topic`, `when`, `if`, `do`, and `check`,
    sets `state=active`, `good_count=1`, `bad_count=0`, and sets `updated_at`.
-2. `modify`, `promote`, and `downgrade` refresh `updated_at`, clear retention
-   metadata, and restore a retained non-deleted record to `active`. A deleted
-   record is treated as not found; a forgotten record may be explicitly
-   addressed before physical purge.
+2. `modify` requires at least one of `when`, `if`, `do`, `check` to be
+   supplied; a request with none of them is invalid input. `modify`, `promote`,
+   and `downgrade` refresh `updated_at`, clear retention metadata, and restore
+   an `inactive` or `forgotten` record to `active`. Records in `deleted` state
+   are treated as not found by `modify`, `promote`, `downgrade`, and search; a
+   `delete` on an already-`deleted` record is idempotent and succeeds without
+   changing state. `forgotten` records never appear in search results, even
+   with `deep=true`, but remain reachable by explicit `(topic, id)` lookup for
+   `modify`, `promote`, `downgrade`, and `delete` until physically purged.
 3. `promote` increments `good_count`; `downgrade` increments `bad_count`.
 4. `delete` and `clear` mark records `deleted`, refresh `updated_at`, and set
    `retention_started_at` rather than removing data immediately.
@@ -140,8 +158,8 @@ The state rules are:
 
 Lifecycle reconciliation and the requested operation are coordinated in the
 same transaction where consistency requires it. Inactive state is not a
-permanent tombstone: an explicit supported update can make the record active
-again and refresh its timestamp.
+permanent tombstone: `modify`, `promote`, or `downgrade` can make the record
+active again and refresh its timestamp.
 
 ## SQLite storage and search
 
@@ -163,8 +181,11 @@ a documented maximum limit.
 
 Semantic search embeds the natural-language query, scores eligible stored
 vectors by cosine similarity, and omits experiences that do not yet have a
-vector. If both `text` and `semantic` are present, the application fuses the
-two ranked lists using reciprocal-rank fusion with constant `k=60`:
+vector. If both `text` and `semantic` are supplied and the embedding call
+fails, the request fails with a typed provider/configuration error rather than
+silently degrading to text-only search. When both queries succeed, the
+application fuses the two ranked lists using reciprocal-rank fusion with
+constant `k=60`:
 
 ```text
 score(record) = sum(1 / (60 + rank))
@@ -189,7 +210,7 @@ ilearned modify --topic TOPIC --id ID [--when TEXT] [--if TEXT]
 ilearned delete --topic TOPIC --id ID
 ilearned promote --topic TOPIC --id ID
 ilearned downgrade --topic TOPIC --id ID
-ilearned clear [--topic TOPIC] [--all]
+ilearned clear (--topic TOPIC | --all)
 ilearned serve
 ```
 
@@ -205,7 +226,7 @@ The versioned JSON API will use these routes:
 
 | Method | Route | Operation |
 | --- | --- | --- |
-| `GET` | `/healthz` | Process/readiness check |
+| `GET` | `/healthz` | Readiness check; verifies SQLite is reachable and migrations are applied |
 | `GET` | `/api/v1/experiences` | Search or browse with query parameters |
 | `POST` | `/api/v1/experiences` | Add |
 | `PATCH` | `/api/v1/experiences/{topic}/{id}` | Modify selected fields |
@@ -216,9 +237,10 @@ The versioned JSON API will use these routes:
 | `POST`/`GET` | `/mcp` | HTTP MCP transport and tool dispatch |
 
 REST query and request bodies use the public field names and expose typed
-errors. Validation maps to 400, missing records to 404, conflicts to 409,
-embedding provider/configuration failures to 503, and unexpected storage or
-runtime failures to 500. The API has no authentication in this local-first
+errors. Validation maps to 400, missing records (including `deleted` records,
+which are treated as not found) map to 404, embedding provider/configuration
+failures required by the request map to 503, and unexpected storage or runtime
+failures map to 500. The API has no authentication in this local-first
 release.
 
 ### Web
@@ -242,8 +264,8 @@ business rules or alternate record shape will be introduced.
 ## Error and transaction policy
 
 The domain/application layer will use typed errors that distinguish invalid
-commands, missing records, conflicts, unavailable embedding services, invalid
-FTS syntax, and storage/runtime failures. SQLite mutations that change a
+commands, missing records, unavailable embedding services, invalid FTS
+syntax, and storage/runtime failures. SQLite mutations that change a
 record, its FTS entry, its embedding metadata, or lifecycle state will be
 transactional. An optional embedding failure is logged and represented as a
 missing vector; it does not invalidate the canonical write. A semantic query
@@ -266,8 +288,9 @@ The implementation is complete only when the following are covered:
 - MCP tests for tool names, schemas, dispatch, and typed errors;
 - web handler tests for escaped rendering, form validation, and destructive
   action confirmation;
-- documentation checks ensuring public behavior and commands match the
-  implementation.
+- a manual documentation review pass before each release, verifying that
+  public behavior, commands, routes, and schemas in `docs/` match the
+  implementation; this is a human checklist item, not an automated test.
 
 Once the Cargo scaffold exists, the authoritative local checks will be
 `cargo fmt --check`, `cargo check`, `cargo test`, and
