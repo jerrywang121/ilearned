@@ -189,3 +189,101 @@ async fn pagination_clamped() {
         .unwrap();
     assert!(r.status().is_success());
 }
+
+#[tokio::test]
+async fn delete_missing_is_404_and_clear_requires_confirm() {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::time::Duration;
+    let dir = tempfile::tempdir().unwrap();
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_ilearned"));
+    let db = dir.path().join("t.db").to_string_lossy().to_string();
+    let bind = format!("127.0.0.1:{port}");
+    let mut child = tokio::process::Command::new(bin)
+        .args(["--db", &db, "serve", "--bind", &bind])
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let client = reqwest::Client::new();
+    let base = format!("http://127.0.0.1:{port}");
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("server did not become ready");
+        }
+        if client
+            .get(format!("{base}/healthz"))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // Delete on a never-existing id => 404.
+    let r = client
+        .delete(format!("{base}/api/v1/experiences/no/such"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 404);
+    // MCP clear without confirm => error mentioning confirm.
+    let init = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&serde_json::json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let session = init.headers()["mcp-session-id"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    let proto = init
+        .headers()
+        .get("mcp-protocol-version")
+        .map(|v| v.to_str().unwrap().to_string())
+        .unwrap_or_else(|| "2025-06-18".to_string());
+    let st = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session)
+        .header("Mcp-Protocol-Version", &proto)
+        .json(&serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(st.as_u16(), 202);
+    let body = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session)
+        .header("Mcp-Protocol-Version", &proto)
+        .json(&serde_json::json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"clear","arguments":{"all":true}}}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        body.to_lowercase().contains("confirm"),
+        "clear without confirm must fail: {body}"
+    );
+    let _ = child.kill().await;
+}

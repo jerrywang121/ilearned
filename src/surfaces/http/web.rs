@@ -272,21 +272,14 @@ async fn detail<R: ExperienceRepo + VectorStore + 'static>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<Html<String>, WebErr> {
-    // Sync SQLite behind a shared lock: direct call is fast enough for local-first.
-    let found = svc
-        .repo()
+    // Reads go through MemoryService (sole entry): reconcile + deleted→404.
+    let e = svc
         .get(&topic, &id)
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    match found.filter(|e| e.state != crate::domain::experience::State::Deleted) {
-        Some(e) => Ok(Html(DetailTemplate { e }.render().map_err(|e| {
-            let WebErr(b) = tpl_err(e);
-            WebErr(b)
-        })?)),
-        None => Err(WebErr(Box::new(err_page(
-            StatusCode::NOT_FOUND,
-            "experience not found",
-        )))),
-    }
+    Ok(Html(DetailTemplate { e }.render().map_err(|e| {
+        let WebErr(b) = tpl_err(e);
+        WebErr(b)
+    })?))
 }
 
 async fn add_form() -> Html<String> {
@@ -312,20 +305,14 @@ async fn edit_form<R: ExperienceRepo + VectorStore + 'static>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<Html<String>, WebErr> {
-    let found = svc
-        .repo()
+    // Reads go through MemoryService (sole entry): reconcile + deleted→404.
+    let e = svc
         .get(&topic, &id)
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    match found.filter(|e| e.state != crate::domain::experience::State::Deleted) {
-        Some(e) => Ok(Html(EditTemplate { e }.render().map_err(|e| {
-            let WebErr(b) = tpl_err(e);
-            WebErr(b)
-        })?)),
-        None => Err(WebErr(Box::new(err_page(
-            StatusCode::NOT_FOUND,
-            "experience not found",
-        )))),
-    }
+    Ok(Html(EditTemplate { e }.render().map_err(|e| {
+        let WebErr(b) = tpl_err(e);
+        WebErr(b)
+    })?))
 }
 
 async fn edit_submit<R: ExperienceRepo + VectorStore>(

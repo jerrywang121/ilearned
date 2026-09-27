@@ -5,9 +5,14 @@
 `ILEARNED_BIND`). Database comes from `--db` / `ILEARNED_DB`
 (default `./ilearned.db`).
 
-- Lifecycle uses fixed defaults (active 60d / forget 120d / retention 60d);
-  there are currently no flags/env vars to tune them, and `serve` does not
-  construct an embedding provider (semantic queries return 503 / exit 3).
+- Lifecycle periods default to active 60d / forget 120d / retention 60d and
+  are tunable via `--active-days` / `--forget-days` / `--retention-days`
+  (env `ILEARNED_ACTIVE_DAYS` / `ILEARNED_FORGET_DAYS` /
+  `ILEARNED_RETENTION_DAYS`); flags > env > defaults. When embedding
+  flags/env (`--embed-endpoint`, `--embed-model`, `--embed-api-key`,
+  plus optional `--embed-dims` / `--embed-timeout-secs`) are all present,
+  `serve` builds an OpenAI-compatible provider so semantic queries work;
+  otherwise they return 503 / exit 3.
 - A non-loopback bind is an explicit deployment choice and does not imply
   authentication exists.
 - Web routes (server-rendered HTML via Askama, inline CSS, no JS),
@@ -18,7 +23,7 @@
   | `GET` | `/` | Search/browse; query `q,topic,deep,limit,offset` |
   | `GET` | `/experiences/new` | Add form |
   | `POST` | `/experiences` | Add submit; form fields `topic,when_text,if_text,do_text,check` (all required, blanks → 400) |
-  | `GET` | `/experiences/:topic/:id` | Detail (deleted → 404) |
+  | `GET` | `/experiences/:topic/:id` | Detail via `MemoryService::get` (sole entry; deleted/missing → 404) |
   | `GET` | `/experiences/:topic/:id/edit` | Edit form |
   | `POST` | `/experiences/:topic/:id` | Edit submit; non-blank subset of `when_text/if_text/do_text/check`; empty → 400 |
   | `POST` | `/experiences/:topic/:id/promote` | Feedback, redirects to detail |

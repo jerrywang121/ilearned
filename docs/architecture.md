@@ -29,10 +29,12 @@ initialization, migrations, and all surface adapters.
 
 - `domain` — `Experience`, lifecycle state, validated commands, search input.
   No transport or database dependencies.
-- `application` — `MemoryService` implementing `search`, `add`, `modify`,
-  `delete`, `promote`, `downgrade`, `clear`. The only entry point for adapters.
-  Generic over `R: ExperienceRepo + VectorStore`; semantic search, cosine,
-  and RRF (`k=60`) live here.
+- `application` — `MemoryService` implementing `get`, `search`, `add`,
+  `modify`, `delete`, `promote`, `downgrade`, `clear`. The only entry point
+  for adapters. Generic over `R: ExperienceRepo + VectorStore`; semantic
+  search, cosine, and RRF (`k=60`) live here. `add` retries only on
+  primary-key/UNIQUE violations (other storage errors propagate); unknown
+  DB `state` values surface as storage errors instead of defaulting.
 - `storage` — SQLite connection, migrations, repositories, FTS5 queries,
   embedding persistence, lifecycle reconciliation, purge transactions.
 - `embedding` — `EmbeddingProvider` trait + OpenAI-compatible HTTP client +
@@ -49,9 +51,10 @@ initialization, migrations, and all surface adapters.
   `serve` path are concrete over `SqliteRepo`).
 - Web templates are inline Askama `#[template(source = ...)]` (no
   `templates/` directory); auto-escaping is on.
-- `main.rs` currently constructs no embedding provider, so semantic search
-  returns `EmbeddingUnavailable` on every surface until provider wiring
-  lands (follow-up in `TODO.md`).
+- `main.rs` builds the service from `Config` (lifecycle periods from
+  flags/env) and attaches an OpenAI-compatible embedding provider when
+  endpoint + model + API key are all configured; otherwise semantic
+  search returns `EmbeddingUnavailable` on every surface.
 
 ## Key invariants
 

@@ -155,8 +155,8 @@ pub async fn delete_one<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    // Deleted records read as not-found; delete itself is idempotent, so a
-    // missing row still returns 204 (matches CLI behavior).
+    // Delete on a never-existing id returns NotFound (404); deleting an
+    // already-deleted record is idempotent (204).
     svc.delete(&topic, &id)?;
     Ok(StatusCode::NO_CONTENT)
 }

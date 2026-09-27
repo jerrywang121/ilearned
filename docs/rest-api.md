@@ -6,7 +6,7 @@
 | `GET` | `/api/v1/experiences` | Search/browse (`topic,text,semantic,limit,offset,deep`) | 200 array |
 | `POST` | `/api/v1/experiences` | Add | 201 record |
 | `PATCH` | `/api/v1/experiences/:topic/:id` | Modify selected fields (≥1 required) | 200 record |
-| `DELETE` | `/api/v1/experiences/:topic/:id` | Delete one (idempotent; missing rows still succeed) | 204, no body |
+| `DELETE` | `/api/v1/experiences/:topic/:id` | Delete one: never-existing id → 404; already-deleted → idempotent 204 | 204, no body |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | Positive feedback (`good_count+1`) | 200 record |
 | `POST` | `/api/v1/experiences/:topic/:id/downgrade` | Negative feedback (`bad_count+1`) | 200 record |
 | `DELETE` | `/api/v1/experiences` | Clear by topic or all; requires `?confirm=true` plus exactly one of `?topic=X` / `?all=true` | 200 `{"cleared": N}` |
@@ -14,8 +14,9 @@
 - Bodies/query use public field names (`when,if,do,check`); timestamps
   RFC 3339. Add example:
   `{"topic":"rust","when":"...","if":"...","do":"...","check":"..."}`
-  (all five required, blanks rejected). Modify accepts any subset of
-  `when/if/do/check`.
+  (all five required, blanks rejected). Modify accepts any non-blank
+  subset of `when/if/do/check` (blank-only values are ignored, so an
+  all-blank modify is a 400).
 - Pagination: default `limit=20 offset=0`; `limit` is clamped to
   `MAX_LIMIT=100` (larger values behave as 100, no error); `limit=0` and
   over-range `offset` return `[]`.

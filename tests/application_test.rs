@@ -236,3 +236,31 @@ fn add_succeeds_when_embed_fails() {
         .unwrap();
     assert!(got.iter().any(|x| x.id == e.id));
 }
+
+#[test]
+fn delete_missing_returns_not_found() {
+    let (_d, s) = svc();
+    assert!(matches!(
+        s.delete("no", "such"),
+        Err(ilearned::AppError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn get_hides_deleted_but_shows_forgotten_and_inactive() {
+    let (_d, s) = svc();
+    let e = s.add(add_cmd("t")).unwrap();
+    assert!(s.get(&e.topic, &e.id).is_ok());
+    {
+        let repo = s.repo();
+        let mut stored = repo.get(&e.topic, &e.id).unwrap().unwrap();
+        stored.state = ilearned::domain::State::Forgotten;
+        repo.update(&stored).unwrap();
+    }
+    assert!(s.get(&e.topic, &e.id).is_ok());
+    s.delete(&e.topic, &e.id).unwrap();
+    assert!(matches!(
+        s.get(&e.topic, &e.id),
+        Err(ilearned::AppError::NotFound { .. })
+    ));
+}

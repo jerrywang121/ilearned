@@ -13,6 +13,31 @@ pub struct Cli {
     /// Bind address for `serve` (env ILEARNED_BIND).
     #[arg(long, global = true, env = "ILEARNED_BIND")]
     pub bind: Option<SocketAddr>,
+    /// Days before active records go inactive (env ILEARNED_ACTIVE_DAYS, default 60).
+    #[arg(long, global = true, env = "ILEARNED_ACTIVE_DAYS")]
+    pub active_days: Option<u64>,
+    /// Days before records are forgotten (env ILEARNED_FORGET_DAYS, default 120).
+    #[arg(long, global = true, env = "ILEARNED_FORGET_DAYS")]
+    pub forget_days: Option<u64>,
+    /// Days before deleted/forgotten rows purge (env ILEARNED_RETENTION_DAYS, default 60).
+    #[arg(long, global = true, env = "ILEARNED_RETENTION_DAYS")]
+    pub retention_days: Option<u64>,
+    /// OpenAI-compatible embeddings base URL (env ILEARNED_EMBED_ENDPOINT).
+    /// Semantic search is enabled only when endpoint + model + key resolve.
+    #[arg(long, global = true, env = "ILEARNED_EMBED_ENDPOINT")]
+    pub embed_endpoint: Option<String>,
+    /// Embedding model id (env ILEARNED_EMBED_MODEL).
+    #[arg(long, global = true, env = "ILEARNED_EMBED_MODEL")]
+    pub embed_model: Option<String>,
+    /// Embedding API key (env ILEARNED_EMBED_API_KEY).
+    #[arg(long, global = true, env = "ILEARNED_EMBED_API_KEY")]
+    pub embed_api_key: Option<String>,
+    /// Embedding vector dims (env ILEARNED_EMBED_DIMS).
+    #[arg(long, global = true, env = "ILEARNED_EMBED_DIMS")]
+    pub embed_dims: Option<usize>,
+    /// Embedding HTTP timeout secs (env ILEARNED_EMBED_TIMEOUT_SECS).
+    #[arg(long, global = true, env = "ILEARNED_EMBED_TIMEOUT_SECS")]
+    pub embed_timeout_secs: Option<u64>,
     /// Stable JSON output (agents/scripts); default is human-readable.
     #[arg(long, global = true)]
     pub json: bool,

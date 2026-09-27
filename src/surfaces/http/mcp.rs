@@ -16,8 +16,21 @@ use crate::domain::experience::Experience;
 use crate::error::AppError;
 use crate::surfaces::http::rest::Shared;
 
-fn svc_err(e: AppError) -> String {
-    e.to_string()
+fn map_err(e: AppError) -> rmcp::ErrorData {
+    match e {
+        AppError::InvalidInput(m) | AppError::InvalidFtsSyntax(m) => {
+            rmcp::ErrorData::invalid_params(m, None)
+        }
+        AppError::NotFound { topic, id } => rmcp::ErrorData::resource_not_found(
+            format!("experience not found: ({topic}, {id})"),
+            None,
+        ),
+        AppError::EmbeddingUnavailable(m) => rmcp::ErrorData::internal_error(
+            format!("embedding unavailable (503-equivalent): {m}"),
+            None,
+        ),
+        AppError::Storage(m) | AppError::Internal(m) => rmcp::ErrorData::internal_error(m, None),
+    }
 }
 
 fn ok_json<T: serde::Serialize>(v: &T) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -83,6 +96,8 @@ pub struct DeleteArgs {
 pub struct ClearArgs {
     pub topic: Option<String>,
     pub all: Option<bool>,
+    #[schemars(description = "Must be true: destructive-action confirmation")]
+    pub confirm: Option<bool>,
 }
 
 pub struct IlearnedTools {
@@ -126,7 +141,7 @@ impl IlearnedTools {
                 offset: a.offset.unwrap_or(0),
                 deep: a.deep.unwrap_or(false),
             })
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+            .map_err(map_err)?;
         ok_json(&out)
     }
 
@@ -141,7 +156,7 @@ impl IlearnedTools {
                 do_text: a.do_text,
                 check_text: a.check,
             })
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+            .map_err(map_err)?;
         ok_json(&e)
     }
 
@@ -160,18 +175,18 @@ impl IlearnedTools {
                 do_text: a.do_text,
                 check_text: a.check,
             })
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+            .map_err(map_err)?;
         ok_json(&e)
     }
 
-    #[tool(description = "Soft-delete an experience (idempotent)")]
+    #[tool(
+        description = "Soft-delete an experience (idempotent on already-deleted; not-found if never existed)"
+    )]
     fn delete(
         &self,
         Parameters(a): Parameters<DeleteArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        self.svc
-            .delete(&a.topic, &a.id)
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+        self.svc.delete(&a.topic, &a.id).map_err(map_err)?;
         ok_json(&serde_json::json!({"deleted": true}))
     }
 
@@ -186,7 +201,7 @@ impl IlearnedTools {
                 topic: a.topic,
                 id: a.id,
             })
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+            .map_err(map_err)?;
         ok_json(&e)
     }
 
@@ -201,15 +216,21 @@ impl IlearnedTools {
                 topic: a.topic,
                 id: a.id,
             })
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+            .map_err(map_err)?;
         ok_json(&e)
     }
 
-    #[tool(description = "Clear experiences by topic or all")]
+    #[tool(description = "Clear experiences by topic or all (requires confirm=true)")]
     fn clear(
         &self,
         Parameters(a): Parameters<ClearArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if a.confirm != Some(true) {
+            return Err(rmcp::ErrorData::invalid_params(
+                "clear requires confirm=true",
+                None,
+            ));
+        }
         let cmd = match (a.topic, a.all.unwrap_or(false)) {
             (Some(t), _) => ClearCommand::Topic(t),
             (None, true) => ClearCommand::All,
@@ -220,10 +241,7 @@ impl IlearnedTools {
                 ));
             }
         };
-        let n = self
-            .svc
-            .clear(&cmd)
-            .map_err(|e| rmcp::ErrorData::internal_error(svc_err(e), None))?;
+        let n = self.svc.clear(&cmd).map_err(map_err)?;
         ok_json(&serde_json::json!({"cleared": n}))
     }
 }

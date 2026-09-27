@@ -30,13 +30,15 @@ fn state_str(s: &State) -> &'static str {
 
 fn row_to_exp(row: &Row) -> rusqlite::Result<Experience> {
     let state_s: String = row.get("state")?;
-    let state = match state_s.as_str() {
-        "active" => State::Active,
-        "inactive" => State::Inactive,
-        "deleted" => State::Deleted,
-        "forgotten" => State::Forgotten,
-        _ => State::Active,
-    };
+    // Unknown states are data corruption: surface as a row error (via the
+    // shared parser) rather than silently mapping to Active.
+    let state = parse_state(&state_s).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            9,
+            rusqlite::types::Type::Text,
+            e.to_string().into(),
+        )
+    })?;
     Ok(Experience {
         topic: row.get("topic")?,
         id: row.get("id")?,

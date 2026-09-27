@@ -42,10 +42,21 @@ pub struct ModifyCommand {
 
 impl ModifyCommand {
     pub fn has_updates(&self) -> bool {
-        self.when_text.is_some()
-            || self.if_text.is_some()
-            || self.do_text.is_some()
-            || self.check_text.is_some()
+        self.when_text
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .if_text
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .do_text
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self
+                .check_text
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
     }
 }
 

@@ -43,6 +43,20 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         &self.repo
     }
 
+    /// Explicit `(topic, id)` lookup. Reconciles first (sole-entry rule).
+    /// Returns `NotFound` for missing or `deleted` rows; `forgotten` and
+    /// `inactive` remain reachable here (search still hides them).
+    pub fn get(&self, topic: &str, id: &str) -> Result<Experience, AppError> {
+        self.reconcile()?;
+        match self.repo.get(topic, id)? {
+            Some(e) if !matches!(e.state, State::Deleted) => Ok(e),
+            _ => Err(AppError::NotFound {
+                topic: topic.to_string(),
+                id: id.to_string(),
+            }),
+        }
+    }
+
     fn reconcile(&self) -> Result<(), AppError> {
         self.repo.reconcile(Utc::now(), &self.lifecycle)
     }
@@ -115,7 +129,12 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                     self.best_effort_embed(&e);
                     return Ok(e);
                 }
-                Err(AppError::Storage(_)) => continue, // PK collision: retry once
+                // UUID-8 collision: retry once. Any other storage error is real.
+                Err(AppError::Storage(m))
+                    if m.contains("UNIQUE constraint failed") || m.contains("PRIMARY KEY") =>
+                {
+                    continue;
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -155,16 +174,16 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                 });
             }
         };
-        if let Some(w) = cmd.when_text {
+        if let Some(w) = cmd.when_text.filter(|s| !s.trim().is_empty()) {
             e.when_text = w;
         }
-        if let Some(i) = cmd.if_text {
+        if let Some(i) = cmd.if_text.filter(|s| !s.trim().is_empty()) {
             e.if_text = i;
         }
-        if let Some(d) = cmd.do_text {
+        if let Some(d) = cmd.do_text.filter(|s| !s.trim().is_empty()) {
             e.do_text = d;
         }
-        if let Some(c) = cmd.check_text {
+        if let Some(c) = cmd.check_text.filter(|s| !s.trim().is_empty()) {
             e.check_text = c;
         }
         let e = self.restore(e);
@@ -175,7 +194,14 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
 
     pub fn delete(&self, topic: &str, id: &str) -> Result<(), AppError> {
         self.reconcile()?;
-        // Idempotent: missing or already-deleted both succeed.
+        // Deleted rows read as missing; never-existing rows are 404 too.
+        // Only already-deleted soft_delete hits stay idempotent Ok.
+        if self.repo.get(topic, id)?.is_none() {
+            return Err(AppError::NotFound {
+                topic: topic.to_string(),
+                id: id.to_string(),
+            });
+        }
         let _ = self.repo.soft_delete(topic, id, Utc::now())?;
         Ok(())
     }

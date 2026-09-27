@@ -59,15 +59,24 @@ pub fn purge_expired(
 ) -> Result<u64, AppError> {
     let now_s = to_epoch(&now);
     let retention_s = cfg.retention_days as i64 * DAY;
-    // Embeddings table may not exist in early migrations; ignore that case.
-    let _ = conn.execute(
+    // The embeddings table is created lazily by the vector store; ignore only
+    // the missing-table error here so real failures still surface.
+    match conn.execute(
         "DELETE FROM embeddings WHERE (topic,id) IN (
             SELECT topic,id FROM experiences
             WHERE state IN ('deleted','forgotten')
               AND retention_started_at IS NOT NULL
               AND (?1 - retention_started_at) > ?2)",
         params![now_s, retention_s],
-    );
+    ) {
+        Ok(_) => {}
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::Unknown && e.extended_code == 1 =>
+        {
+            // SQLITE_ERROR (extended 1): no such table — embeddings never used.
+        }
+        Err(e) => return Err(AppError::from(e)),
+    }
     let n = conn.execute(
         "DELETE FROM experiences
          WHERE state IN ('deleted','forgotten')

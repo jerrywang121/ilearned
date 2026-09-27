@@ -24,11 +24,6 @@ Ordered implementation milestones (see `docs/superpowers/plans/2026-09-27-initia
 
 ## Follow-ups (post first-release)
 
-- Wire the embedding provider into `main.rs`/`serve` (flags + env for
-  endpoint/model/key); semantic search currently always reports
-  embedding-unavailable.
-- Lifecycle period flags/env (active/forget/retention currently fixed
-  defaults in the binary).
 - Documented maximum search limit tuning (`MAX_LIMIT`).
 - Embedding model/dimension migration path.
 - Backup/export story for the local SQLite file.

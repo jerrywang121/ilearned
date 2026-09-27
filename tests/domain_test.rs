@@ -104,3 +104,17 @@ fn experience_serde_uses_readme_names() {
     assert!(v.get("check_text").is_none());
     assert_eq!(v.get("state").and_then(|s| s.as_str()), Some("active"));
 }
+
+#[test]
+fn modify_blank_strings_are_not_updates() {
+    use ilearned::domain::ModifyCommand;
+    let cmd = ModifyCommand {
+        topic: "t".to_string(),
+        id: "x".to_string(),
+        when_text: Some("   ".to_string()),
+        if_text: None,
+        do_text: None,
+        check_text: None,
+    };
+    assert!(!cmd.has_updates());
+}
