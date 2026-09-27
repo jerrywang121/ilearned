@@ -24,9 +24,11 @@ tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["form"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 askama = "0.12"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 rmcp = { version = "3", features = ["server", "transport-io", "transport-streamable-http-server", "schemars"] }
 async-trait = "0.1"
 schemars = "1"
 
 [dev-dependencies]
 tempfile = "3"
+toml = "0.8"

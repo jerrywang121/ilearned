@@ -26,7 +26,25 @@ ilearned mcp
 - Lifecycle tuning: `--active-days` (`ILEARNED_ACTIVE_DAYS`, default 60),
   `--forget-days` (`ILEARNED_FORGET_DAYS`, default 120),
   `--retention-days` (`ILEARNED_RETENTION_DAYS`, default 60).
-  Precedence: flags > env > defaults.
+  Precedence: flags > env > local file > global file > defaults.
+- Config files (TOML, all keys optional): global
+  `~/.config/ilearned/config.toml` (`$XDG_CONFIG_HOME` respected), overlaid
+  per-field by local `./.ilearned/config.toml`. Missing files are ignored;
+  malformed TOML or unknown keys abort with exit 2; an unparseable `bind`
+  aborts with exit 2.
+  ```toml
+  db = "./ilearned.db"
+  bind = "127.0.0.1:8787"
+  active_days = 60
+  forget_days = 120
+  retention_days = 60
+  [embedding]
+  endpoint = "http://localhost:11434/v1"
+  model = "nomic-embed-text"
+  api_key = "secret"
+  dims = 768
+  timeout_secs = 30
+  ```
 - Embedding provider (optional): `--embed-endpoint` (`ILEARNED_EMBED_ENDPOINT`),
   `--embed-model` (`ILEARNED_EMBED_MODEL`), `--embed-api-key`
   (`ILEARNED_EMBED_API_KEY`), `--embed-dims` (`ILEARNED_EMBED_DIMS`,
@@ -55,7 +73,8 @@ ilearned mcp
   for harness use. It ignores `--bind`/`--json`; stdout stays pure
   JSON-RPC (logs/errors go to stderr). The DB defaults to
   `./.ilearned/ilearned.db` under the working directory when `--db` /
-  `ILEARNED_DB` are unset (parent dirs are created on open). See
+  `ILEARNED_DB` and file `db` are all unset (parent dirs are created on
+  open). A `db` set in either config file counts as explicit. See
   [docs/mcp.md](docs/mcp.md).
 - `delete` on a never-existing `(topic, id)` exits 1 (not-found);
   deleting an already-deleted record is idempotent and succeeds.

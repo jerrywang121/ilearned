@@ -2,7 +2,7 @@ use clap::Parser;
 use tokio::runtime::Builder;
 
 use ilearned::application::MemoryService;
-use ilearned::config::{Config, EmbeddingConfig};
+use ilearned::config::{Config, EmbeddingConfig, FileConfig};
 use ilearned::embedding::openai::OpenAiEmbeddingProvider;
 use ilearned::storage::SqliteRepo;
 use ilearned::surfaces::cli::{exit_code, render_error, run_cli, Cli, Commands};
@@ -18,30 +18,44 @@ fn build_service(cfg: &Config) -> Result<MemoryService<SqliteRepo>, ilearned::Ap
 
 fn main() {
     let cli = Cli::parse();
-    let embedding = EmbeddingConfig::from_parts(
+    // Config files load first: embedding flags fall back through
+    // env, then the merged (local-over-global) file layer.
+    let files = FileConfig::load_files().unwrap_or_else(|e| {
+        eprintln!("{}", render_error(&e, cli.json));
+        std::process::exit(exit_code(&e));
+    });
+    let file_embedding = files.clone().and_then(|f| f.embedding);
+    let embedding = EmbeddingConfig::from_parts_with_files(
         cli.embed_endpoint.clone(),
         cli.embed_model.clone(),
         cli.embed_api_key.clone(),
         cli.embed_dims,
         cli.embed_timeout_secs,
+        file_embedding,
     )
     .or_else(EmbeddingConfig::from_env);
     // `mcp` defaults to a project-local store when no explicit db is given:
     // ./.ilearned/ilearned.db (parent dirs are created by open_db).
+    // A `db` set in a config file also counts as explicit.
+    let db_from_file = files.as_ref().and_then(|f| f.db.clone());
     let db = cli.db.clone().or_else(|| {
-        if matches!(&cli.command, Commands::Mcp) && std::env::var("ILEARNED_DB").is_err() {
+        if matches!(&cli.command, Commands::Mcp)
+            && std::env::var("ILEARNED_DB").is_err()
+            && db_from_file.is_none()
+        {
             Some(std::path::PathBuf::from("./.ilearned/ilearned.db"))
         } else {
             None
         }
     });
-    let cfg = Config::load(
+    let cfg = Config::load_with_files(
         db,
         cli.bind,
         cli.active_days,
         cli.forget_days,
         cli.retention_days,
         embedding,
+        files,
     )
     .unwrap_or_else(|e| {
         eprintln!("{}", render_error(&e, cli.json));

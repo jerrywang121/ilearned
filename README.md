@@ -123,7 +123,12 @@ For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio
 
 ## Configuration
 
-Precedence: **flags > `ILEARNED_*` env > defaults.**
+Precedence: **flags > `ILEARNED_*` env > local file > global file > defaults.**
+
+Config files are TOML, all keys optional: global
+`~/.config/ilearned/config.toml` (`$XDG_CONFIG_HOME` respected), overlaid
+per-field by local `./.ilearned/config.toml` (see [docs/cli.md](docs/cli.md)
+for the schema).
 
 | Setting | Flag | Env | Default |
 | --- | --- | --- | --- |

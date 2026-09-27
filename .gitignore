@@ -4,6 +4,7 @@
 # Local tool state
 .serena/
 .ilearned/
+ilearned.db*
 
 # Git worktrees
 .worktrees/
