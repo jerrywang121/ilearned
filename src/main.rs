@@ -1,4 +1,5 @@
 use clap::Parser;
+use tokio::runtime::Builder;
 
 use ilearned::application::MemoryService;
 use ilearned::config::Config;
@@ -18,15 +19,19 @@ fn main() {
         std::process::exit(exit_code(&e));
     });
     match &cli.command {
-        Commands::Serve(_) => {
-            eprintln!(
-                "{}",
-                render_error(
-                    &ilearned::AppError::InvalidInput("serve mode arrives in Task 6".to_string()),
-                    cli.json
-                )
-            );
-            std::process::exit(2);
+        Commands::Serve(a) => {
+            let svc = build_service(&cfg.db_path).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            let bind = a.bind.or(cli.bind).unwrap_or(cfg.bind);
+            let rt = Builder::new_multi_thread().enable_all().build().unwrap();
+            rt.block_on(async {
+                if let Err(e) = ilearned::surfaces::http::serve(svc, bind).await {
+                    eprintln!("{}", render_error(&e, cli.json));
+                    std::process::exit(exit_code(&e));
+                }
+            });
         }
         cmd => {
             let svc = build_service(&cfg.db_path).unwrap_or_else(|e| {

@@ -110,4 +110,8 @@ pub struct ClearArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-pub struct ServeArgs {}
+pub struct ServeArgs {
+    /// Bind address override (default from config).
+    #[arg(long)]
+    pub bind: Option<SocketAddr>,
+}
