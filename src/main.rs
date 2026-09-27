@@ -26,8 +26,17 @@ fn main() {
         cli.embed_timeout_secs,
     )
     .or_else(EmbeddingConfig::from_env);
+    // `mcp` defaults to a project-local store when no explicit db is given:
+    // ./.ilearned/ilearned.db (parent dirs are created by open_db).
+    let db = cli.db.clone().or_else(|| {
+        if matches!(&cli.command, Commands::Mcp) && std::env::var("ILEARNED_DB").is_err() {
+            Some(std::path::PathBuf::from("./.ilearned/ilearned.db"))
+        } else {
+            None
+        }
+    });
     let cfg = Config::load(
-        cli.db.clone(),
+        db,
         cli.bind,
         cli.active_days,
         cli.forget_days,
@@ -48,6 +57,21 @@ fn main() {
             let rt = Builder::new_multi_thread().enable_all().build().unwrap();
             rt.block_on(async {
                 if let Err(e) = ilearned::surfaces::http::serve(svc, bind).await {
+                    eprintln!("{}", render_error(&e, cli.json));
+                    std::process::exit(exit_code(&e));
+                }
+            });
+        }
+        Commands::Mcp => {
+            let svc = build_service(&cfg).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            let rt = Builder::new_multi_thread().enable_all().build().unwrap();
+            rt.block_on(async {
+                if let Err(e) =
+                    ilearned::surfaces::http::mcp::serve_stdio(std::sync::Arc::new(svc)).await
+                {
                     eprintln!("{}", render_error(&e, cli.json));
                     std::process::exit(exit_code(&e));
                 }
