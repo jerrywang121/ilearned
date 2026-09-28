@@ -36,7 +36,9 @@ impl TestServer {
 
 async fn spawn_server() -> TestServer {
     let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
     let listener =
         tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
             .await
@@ -46,7 +48,13 @@ async fn spawn_server() -> TestServer {
     let bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_ilearned"));
     let bind = format!("127.0.0.1:{port}");
     let child = tokio::process::Command::new(bin)
-        .args(["--db", &db, "serve", "--bind", &bind])
+        .args([
+            "--config-file",
+            &config.to_string_lossy(),
+            "serve",
+            "--bind",
+            &bind,
+        ])
         .kill_on_drop(true)
         .spawn()
         .unwrap();

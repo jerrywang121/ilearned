@@ -1,5 +1,7 @@
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use serde::Deserialize;
 
@@ -20,8 +22,8 @@ impl EmbeddingConfig {
     pub const DEFAULT_TIMEOUT_SECS: u64 = 30;
     pub const DEFAULT_DIMS: usize = 1536;
 
-    /// Build from explicit parts (CLI flags); missing pieces fall back to
-    /// `ILEARNED_EMBED_*` env, then config-file values. Returns `None` when
+    /// Build from explicit values; missing pieces fall back to
+    /// `ILEARNED_EMBED_*` env, then config-file values. Returns `Ok(None)` when
     /// disabled (no endpoint, model, or key from any source).
     pub fn from_parts(
         endpoint: Option<String>,
@@ -29,12 +31,12 @@ impl EmbeddingConfig {
         api_key: Option<String>,
         dims: Option<usize>,
         timeout_secs: Option<u64>,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, AppError> {
         Self::from_parts_with_files(endpoint, model, api_key, dims, timeout_secs, None)
     }
 
-    /// Flag/env/file resolution. Precedence per field:
-    /// flags > env > file > defaults (`dims`/`timeout_secs` only).
+    /// Explicit/env/file resolution. Precedence per field:
+    /// explicit values > env > file > defaults (`dims`/`timeout_secs` only).
     pub fn from_parts_with_files(
         endpoint: Option<String>,
         model: Option<String>,
@@ -42,64 +44,108 @@ impl EmbeddingConfig {
         dims: Option<usize>,
         timeout_secs: Option<u64>,
         file: Option<FileEmbeddingConfig>,
-    ) -> Option<Self> {
-        let endpoint = endpoint.filter(|s| !s.trim().is_empty()).or_else(|| {
-            std::env::var("ILEARNED_EMBED_ENDPOINT")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-        });
-        let endpoint = endpoint.or_else(|| {
-            file.as_ref()
-                .and_then(|f| f.endpoint.clone())
-                .filter(|s| !s.trim().is_empty())
-        })?;
-        let model = model.filter(|s| !s.trim().is_empty()).or_else(|| {
-            std::env::var("ILEARNED_EMBED_MODEL")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-        });
-        let model = model.or_else(|| {
-            file.as_ref()
-                .and_then(|f| f.model.clone())
-                .filter(|s| !s.trim().is_empty())
-        })?;
-        let api_key = api_key.filter(|s| !s.trim().is_empty()).or_else(|| {
-            std::env::var("ILEARNED_EMBED_API_KEY")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-        });
-        let api_key = api_key.or_else(|| {
-            file.as_ref()
-                .and_then(|f| f.api_key.clone())
-                .filter(|s| !s.trim().is_empty())
-        })?;
-        let dims = dims
-            .or_else(|| {
-                std::env::var("ILEARNED_EMBED_DIMS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            })
-            .or_else(|| file.as_ref().and_then(|f| f.dims));
-        let timeout_secs = timeout_secs
-            .or_else(|| {
-                std::env::var("ILEARNED_EMBED_TIMEOUT_SECS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            })
-            .or_else(|| file.as_ref().and_then(|f| f.timeout_secs));
-        Some(Self {
+    ) -> Result<Option<Self>, AppError> {
+        let dims = resolve_setting(
+            dims,
+            "ILEARNED_EMBED_DIMS",
+            file.as_ref().and_then(|f| f.dims),
+        )?;
+        let timeout_secs = resolve_setting(
+            timeout_secs,
+            "ILEARNED_EMBED_TIMEOUT_SECS",
+            file.as_ref().and_then(|f| f.timeout_secs),
+        )?;
+        let endpoint = resolve_string(
+            endpoint,
+            "ILEARNED_EMBED_ENDPOINT",
+            file.as_ref().and_then(|f| f.endpoint.clone()),
+        )?;
+        let Some(endpoint) = endpoint else {
+            return Ok(None);
+        };
+        let model = resolve_string(
+            model,
+            "ILEARNED_EMBED_MODEL",
+            file.as_ref().and_then(|f| f.model.clone()),
+        )?;
+        let Some(model) = model else {
+            return Ok(None);
+        };
+        let api_key = resolve_string(
+            api_key,
+            "ILEARNED_EMBED_API_KEY",
+            file.as_ref().and_then(|f| f.api_key.clone()),
+        )?;
+        let Some(api_key) = api_key else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
             endpoint,
             model,
             api_key,
             dims: dims.unwrap_or(Self::DEFAULT_DIMS),
             timeout_secs: timeout_secs.unwrap_or(Self::DEFAULT_TIMEOUT_SECS),
-        })
+        }))
     }
 
-    /// Env-only construction (used as fallback when no flags given).
-    pub fn from_env() -> Option<Self> {
+    /// Env-only construction.
+    pub fn from_env() -> Result<Option<Self>, AppError> {
         Self::from_parts(None, None, None, None, None)
     }
+}
+
+fn env_string(name: &str) -> Result<Option<String>, AppError> {
+    match std::env::var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(AppError::InvalidInput(format!(
+            "environment variable {name} is not valid UTF-8"
+        ))),
+    }
+}
+
+fn parse_env<T>(name: &str) -> Result<Option<T>, AppError>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    let Some(value) = env_string(name)? else {
+        return Ok(None);
+    };
+    value.parse().map(Some).map_err(|e| {
+        AppError::InvalidInput(format!(
+            "invalid value for environment variable {name}: {e}"
+        ))
+    })
+}
+
+fn resolve_setting<T>(
+    explicit: Option<T>,
+    env_name: &str,
+    file: Option<T>,
+) -> Result<Option<T>, AppError>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+    Ok(parse_env(env_name)?.or(file))
+}
+
+fn resolve_string(
+    explicit: Option<String>,
+    env_name: &str,
+    file: Option<String>,
+) -> Result<Option<String>, AppError> {
+    if let Some(value) = explicit.filter(|s| !s.trim().is_empty()) {
+        return Ok(Some(value));
+    }
+    if let Some(value) = env_string(env_name)?.filter(|s| !s.trim().is_empty()) {
+        return Ok(Some(value));
+    }
+    Ok(file.filter(|s| !s.trim().is_empty()))
 }
 
 /// File-backed configuration (TOML). All fields optional; `None` means
@@ -212,16 +258,38 @@ impl FileConfig {
     }
 
     /// Load and merge global + local files (local wins per field).
-    /// Missing files are silently ignored.
+    /// Missing default files are silently ignored.
     pub fn load_files() -> Result<Option<Self>, AppError> {
+        Self::load_files_with_override(None)
+    }
+
+    /// Load global and local files, then overlay an explicitly selected CLI
+    /// file. The explicit file must exist and wins per field over both defaults.
+    pub fn load_files_with_override(
+        override_path: Option<&Path>,
+    ) -> Result<Option<Self>, AppError> {
         let global = Self::load_path(&Self::global_path())?;
         let local = Self::load_path(&Self::local_path())?;
-        Ok(Self::merge(global, local))
+        let base = Self::merge(global, local);
+        let override_config = match override_path {
+            Some(path) => match Self::load_path(path)? {
+                Some(config) => Some(config),
+                None => {
+                    return Err(AppError::InvalidInput(format!(
+                        "config file {} does not exist",
+                        path.display()
+                    )))
+                }
+            },
+            None => None,
+        };
+        Ok(Self::merge(base, override_config))
     }
 }
 
 /// Runtime configuration.
-/// Precedence: CLI flags > `ILEARNED_*` env > local file > global file > defaults.
+/// Precedence: explicit values > `ILEARNED_*` env > selected config overlay
+/// > local file > global file > defaults.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_path: PathBuf,
@@ -251,8 +319,8 @@ impl Config {
         )
     }
 
-    /// Flag/env/file resolution with an explicit (already merged) file layer.
-    /// Precedence per field: flags > env > file > defaults.
+    /// Env/file resolution with an explicit (already merged) file layer.
+    /// Explicit values take precedence over env, then file values, then defaults.
     pub fn load_with_files(
         db_path: Option<PathBuf>,
         bind: Option<SocketAddr>,
@@ -262,41 +330,42 @@ impl Config {
         embedding: Option<EmbeddingConfig>,
         file: Option<FileConfig>,
     ) -> Result<Self, AppError> {
-        let file_bind: Option<SocketAddr> = match file.as_ref().and_then(|f| f.bind.clone()) {
-            Some(s) => Some(s.parse().map_err(|e| {
-                AppError::InvalidInput(format!("invalid bind in config file {s:?}: {e}"))
-            })?),
-            None => None,
-        };
         let db_path = db_path
-            .or_else(|| std::env::var("ILEARNED_DB").ok().map(PathBuf::from))
+            .or_else(|| std::env::var_os("ILEARNED_DB").map(PathBuf::from))
             .or_else(|| file.as_ref().and_then(|f| f.db.clone()))
             .unwrap_or_else(|| PathBuf::from("./ilearned.db"));
-        let bind = bind
-            .or_else(|| {
-                std::env::var("ILEARNED_BIND")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            })
-            .or(file_bind)
-            .unwrap_or_else(|| "127.0.0.1:8787".parse().expect("default bind parses"));
-        fn env_days(name: &str) -> Option<u64> {
-            std::env::var(name).ok().and_then(|s| s.parse::<u64>().ok())
-        }
+        let bind = if let Some(bind) = bind {
+            bind
+        } else if let Some(bind) = parse_env("ILEARNED_BIND")? {
+            bind
+        } else {
+            match file.as_ref().and_then(|f| f.bind.clone()) {
+                Some(s) => s.parse().map_err(|e| {
+                    AppError::InvalidInput(format!("invalid bind in config file {s:?}: {e}"))
+                })?,
+                None => "127.0.0.1:8787".parse().expect("default bind parses"),
+            }
+        };
         let file_days = |pick: fn(&FileConfig) -> Option<u64>| file.as_ref().and_then(pick);
         let lifecycle = LifecycleConfig {
-            active_period_days: active_days
-                .or_else(|| env_days("ILEARNED_ACTIVE_DAYS"))
-                .or_else(|| file_days(|f| f.active_days))
-                .unwrap_or(LifecycleConfig::default().active_period_days),
-            forget_period_days: forget_days
-                .or_else(|| env_days("ILEARNED_FORGET_DAYS"))
-                .or_else(|| file_days(|f| f.forget_days))
-                .unwrap_or(LifecycleConfig::default().forget_period_days),
-            retention_days: retention_days
-                .or_else(|| env_days("ILEARNED_RETENTION_DAYS"))
-                .or_else(|| file_days(|f| f.retention_days))
-                .unwrap_or(LifecycleConfig::default().retention_days),
+            active_period_days: resolve_setting(
+                active_days,
+                "ILEARNED_ACTIVE_DAYS",
+                file_days(|f| f.active_days),
+            )?
+            .unwrap_or(LifecycleConfig::default().active_period_days),
+            forget_period_days: resolve_setting(
+                forget_days,
+                "ILEARNED_FORGET_DAYS",
+                file_days(|f| f.forget_days),
+            )?
+            .unwrap_or(LifecycleConfig::default().forget_period_days),
+            retention_days: resolve_setting(
+                retention_days,
+                "ILEARNED_RETENTION_DAYS",
+                file_days(|f| f.retention_days),
+            )?
+            .unwrap_or(LifecycleConfig::default().retention_days),
         };
         Ok(Self {
             db_path,

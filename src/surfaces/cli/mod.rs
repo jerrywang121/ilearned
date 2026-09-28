@@ -98,7 +98,7 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
                 format!("cleared {n} experience(s)")
             })
         }
-        Commands::Serve(_) | Commands::Mcp => Err(AppError::InvalidInput(
+        Commands::Serve(_) | Commands::Mcp(_) => Err(AppError::InvalidInput(
             "serve/mcp are handled by the main dispatch".to_string(),
         )),
         Commands::Topic(t) => {

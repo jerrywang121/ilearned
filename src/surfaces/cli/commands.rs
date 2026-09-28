@@ -3,45 +3,21 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+/// Stable JSON output for agents and scripts; human-readable output is the default.
+#[derive(Debug, Clone, Args, Default)]
+pub struct JsonArgs {
+    /// Stable JSON output for agents and scripts.
+    #[arg(long)]
+    pub json: bool,
+}
+
 /// ilearned: lightweight AI agent memory management - a live rule book of learned experiences (when/if/do/check) grouped by topic. Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal.
 #[derive(Debug, Parser)]
 #[command(name = "ilearned", version)]
 pub struct Cli {
-    /// SQLite database path (env ILEARNED_DB, default ./ilearned.db,
-    /// ./.ilearned/ilearned.db for `mcp`).
-    #[arg(long, global = true, env = "ILEARNED_DB")]
-    pub db: Option<PathBuf>,
-    /// Bind address for `serve` (env ILEARNED_BIND).
-    #[arg(long, global = true, env = "ILEARNED_BIND")]
-    pub bind: Option<SocketAddr>,
-    /// Days before active records go inactive (env ILEARNED_ACTIVE_DAYS, default 60).
-    #[arg(long, global = true, env = "ILEARNED_ACTIVE_DAYS")]
-    pub active_days: Option<u64>,
-    /// Days before records are forgotten (env ILEARNED_FORGET_DAYS, default 120).
-    #[arg(long, global = true, env = "ILEARNED_FORGET_DAYS")]
-    pub forget_days: Option<u64>,
-    /// Days before deleted/forgotten rows purge (env ILEARNED_RETENTION_DAYS, default 60).
-    #[arg(long, global = true, env = "ILEARNED_RETENTION_DAYS")]
-    pub retention_days: Option<u64>,
-    /// OpenAI-compatible embeddings base URL (env ILEARNED_EMBED_ENDPOINT).
-    /// Semantic search is enabled only when endpoint + model + key resolve.
-    #[arg(long, global = true, env = "ILEARNED_EMBED_ENDPOINT")]
-    pub embed_endpoint: Option<String>,
-    /// Embedding model id (env ILEARNED_EMBED_MODEL).
-    #[arg(long, global = true, env = "ILEARNED_EMBED_MODEL")]
-    pub embed_model: Option<String>,
-    /// Embedding API key (env ILEARNED_EMBED_API_KEY).
-    #[arg(long, global = true, env = "ILEARNED_EMBED_API_KEY")]
-    pub embed_api_key: Option<String>,
-    /// Embedding vector dims (env ILEARNED_EMBED_DIMS).
-    #[arg(long, global = true, env = "ILEARNED_EMBED_DIMS")]
-    pub embed_dims: Option<usize>,
-    /// Embedding HTTP timeout secs (env ILEARNED_EMBED_TIMEOUT_SECS).
-    #[arg(long, global = true, env = "ILEARNED_EMBED_TIMEOUT_SECS")]
-    pub embed_timeout_secs: Option<u64>,
-    /// Stable JSON output (agents/scripts); default is human-readable.
-    #[arg(long, global = true)]
-    pub json: bool,
+    /// TOML configuration file to overlay global and local configuration.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub config_file: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -82,9 +58,28 @@ pub enum Commands {
     /// Start REST + web + MCP on one listener.
     Serve(ServeArgs),
     /// Run as an MCP server over stdio (stdin/stdout) for harness use.
-    /// DB defaults to `./.ilearned/ilearned.db` when `--db`/`ILEARNED_DB`
-    /// are unset; stdout stays pure JSON-RPC (logs go to stderr).
-    Mcp,
+    Mcp(McpArgs),
+}
+
+impl Commands {
+    pub fn json(&self) -> bool {
+        match self {
+            Self::Add(a) => a.output.json,
+            Self::Search(a) => a.output.json,
+            Self::Modify(a) => a.output.json,
+            Self::Delete(a) => a.output.json,
+            Self::Promote(a) | Self::Downgrade(a) => a.output.json,
+            Self::Clear(a) => a.output.json,
+            Self::Topic(a) => match &a.command {
+                TopicCommands::List(a) => a.output.json,
+                TopicCommands::Search(a) => a.output.json,
+            },
+            Self::Export(a) => a.output.json,
+            Self::Import(a) => a.output.json,
+            Self::Serve(a) => a.output.json,
+            Self::Mcp(a) => a.output.json,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -104,6 +99,8 @@ pub struct AddArgs {
     /// Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action.
     #[arg(long)]
     pub check: String,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -126,6 +123,8 @@ pub struct SearchArgs {
     /// Include inactive records (deleted/forgotten always excluded).
     #[arg(long)]
     pub deep: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -148,6 +147,8 @@ pub struct ModifyArgs {
     /// New check text (blank values ignored).
     #[arg(long)]
     pub check: Option<String>,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -161,6 +162,8 @@ pub struct DeleteArgs {
     /// Skip the interactive confirmation prompt.
     #[arg(long)]
     pub yes: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -171,6 +174,8 @@ pub struct IdArgs {
     /// Id of the record.
     #[arg(long)]
     pub id: String,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -184,13 +189,23 @@ pub struct ClearArgs {
     /// Skip the interactive confirmation prompt.
     #[arg(long)]
     pub yes: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct ServeArgs {
-    /// Bind address override (default from config).
+    /// Bind address override; takes precedence over config files and environment.
     #[arg(long)]
     pub bind: Option<SocketAddr>,
+    #[command(flatten)]
+    pub output: JsonArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct McpArgs {
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -204,6 +219,8 @@ pub struct ExportArgs {
     /// Write to PATH instead of stdout (parent dirs created, overwritten).
     #[arg(long)]
     pub file: Option<PathBuf>,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -215,6 +232,8 @@ pub struct ImportArgs {
     /// Without --merge every line gets a fresh id.
     #[arg(long)]
     pub merge: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -245,6 +264,8 @@ pub struct TopicListArgs {
     /// Include topics that only have inactive records.
     #[arg(long)]
     pub deep: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -263,4 +284,6 @@ pub struct TopicSearchArgs {
     /// Include topics that only have inactive records.
     #[arg(long)]
     pub deep: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }

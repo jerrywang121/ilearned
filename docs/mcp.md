@@ -10,8 +10,10 @@
     `notifications/initialized` → `tools/*`. Stdout stays pure JSON-RPC
     (all logs/errors go to stderr). No `--bind`, no session headers.
 - Database: `ilearned mcp` defaults to `./.ilearned/ilearned.db` under the
-  harness's working directory when `--db`/`ILEARNED_DB` are unset
-  (parent dirs are created on open), so each project gets a local store.
+  harness's working directory when the selected/default config files and
+  `ILEARNED_DB` do not provide `db` (parent dirs are created on open), so each
+  project gets a local store. Configuration selection is CLI-only; the HTTP
+  and stdio MCP protocols expose no configuration controls.
   Add `.ilearned/` to `.gitignore` unless the memory should be shared.
 - Harness config (opencode example):
   ```json
@@ -20,7 +22,8 @@
     "enabled": true } } }
   ```
   Run with the project dir as cwd for the default local store, or pass
-  `--db <path>` / `ILEARNED_DB` for an explicit location.
+  `--config-file <path>` (with `db = "..."`) / `ILEARNED_DB` for an explicit
+  location.
 - Tools (9): `search`, `add`, `modify`, `delete`, `promote`, `downgrade`,
   `clear`, `topics_list`, `topics_search`. Argument schemas mirror the domain commands exactly:
   `search{topic?,text?,semantic?,limit?,offset?,deep?}`,
