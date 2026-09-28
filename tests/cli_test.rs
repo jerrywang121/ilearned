@@ -44,6 +44,42 @@ fn add_search_json_roundtrip() {
 }
 
 #[test]
+fn topic_list_and_search_json() {
+    let dir = TempDir::new().unwrap();
+    let db = db_arg(&dir);
+    for topic in ["travel/hotel/checkout", "travel/flight"] {
+        let out = Command::new(bin())
+            .args([
+                "--db", &db, "--json", "add", "--topic", topic, "--when", "w", "--if", "i",
+                "--do", "d", "--check", "c",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    // list --level 1 collapses to the shared prefix.
+    let out = Command::new(bin())
+        .args(["--db", &db, "--json", "topic", "list", "--level", "1"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v, serde_json::json!(["travel"]));
+    // search with a # pattern returns the full topics sorted.
+    let out = Command::new(bin())
+        .args(["--db", &db, "--json", "topic", "search", "travel/#"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v, serde_json::json!(["travel/flight", "travel/hotel/checkout"]));
+}
+
+#[test]
 fn destructive_requires_confirmation() {
     let dir = TempDir::new().unwrap();
     let db = db_arg(&dir);

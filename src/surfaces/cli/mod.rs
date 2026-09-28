@@ -6,7 +6,7 @@ pub use render::{confirm_destructive, exit_code, render_error, render_experience
 
 use crate::application::MemoryService;
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
+    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::error::AppError;
 use crate::storage::embeddings::VectorStore;
@@ -101,6 +101,34 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
         Commands::Serve(_) | Commands::Mcp => Err(AppError::InvalidInput(
             "serve/mcp are handled by the main dispatch".to_string(),
         )),
+        Commands::Topic(t) => {
+            let (query, level, limit, offset, deep) = match &t.command {
+                commands::TopicCommands::List(a) => {
+                    (None, a.level, a.limit, a.offset, a.deep)
+                }
+                commands::TopicCommands::Search(a) => (
+                    Some(a.query.clone()),
+                    a.level,
+                    a.limit,
+                    a.offset,
+                    a.deep,
+                ),
+            };
+            let out = svc.list_topics(&TopicQuery {
+                query,
+                level,
+                limit,
+                offset,
+                deep,
+            })?;
+            Ok(if json {
+                serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string())
+            } else if out.is_empty() {
+                "(no topics)".to_string()
+            } else {
+                out.join("\n")
+            })
+        }
         Commands::Export(_) | Commands::Import(_) => Err(AppError::InvalidInput(
             "export/import run in main so stdout/file stay streamable".to_string(),
         )),

@@ -97,6 +97,7 @@ fn main() {
         | Commands::Delete(_)
         | Commands::Promote(_)
         | Commands::Downgrade(_)
+        | Commands::Topic(_)
         | Commands::Clear(_)) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
                 eprintln!("{}", render_error(&e, cli.json));
