@@ -1,8 +1,12 @@
 # Storage
 
-- SQLite at configurable path (default `./ilearned.db`), WAL mode,
-  `busy_timeout=5000`, compound primary key `(topic, id)`. `open_db`
-  creates parent dirs and records `schema_migrations(version=1)`.
+- SQLite at a configured path, or (when no path is configured) an existing
+  `./.ilearned/ilearned.db` followed by an existing XDG data database
+  (`$XDG_DATA_HOME/ilearned/ilearned.db`, or
+  `~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
+  exists. Explicitly configured paths may be created by `open_db`, which also
+  enables WAL, sets `busy_timeout=5000`, and records
+  `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
 - `experiences` columns: `topic, id, when_text, if_text, do_text,
   check_text, updated_at (INTEGER epoch seconds), good_count, bad_count,
   state ('active'|'inactive'|'deleted'|'forgotten'), retention_started_at

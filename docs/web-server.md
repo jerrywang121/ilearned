@@ -3,9 +3,12 @@
 `ilearned serve [--bind ADDR]` starts REST, web, and MCP on one listener
 (default `127.0.0.1:8787`; subcommand `--bind` wins over every config-file
 and `ILEARNED_BIND` value). Database comes from the selected/default TOML
-files or `ILEARNED_DB` (default `./ilearned.db`). The `--config-file` selector
-and all other configuration are CLI-only; REST, web, and HTTP MCP do not expose
-configuration controls.
+files or `ILEARNED_DB`; when unset, an existing `./.ilearned/ilearned.db` is
+preferred, followed by an existing XDG data database
+(`$XDG_DATA_HOME/ilearned/ilearned.db`, or
+`~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
+exists. The `--config-file` selector and all other configuration are CLI-only;
+REST, web, and HTTP MCP do not expose configuration controls.
 
 - Lifecycle periods default to active 60d / forget 120d / retention 60d and
   are tunable via `active_days` / `forget_days` / `retention_days` in TOML or

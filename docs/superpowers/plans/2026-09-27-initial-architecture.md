@@ -14,7 +14,7 @@
 
 - One binary: CLI subcommands + `serve` mode; REST + web + MCP share one listener.
 - Single-user local-first; no auth, no multi-user ownership.
-- Default bind `127.0.0.1:8787`; default DB `./ilearned.db`; config precedence `serve --bind` > env (`ILEARNED_*`) > explicit `--config-file` overlay > local/global files > defaults.
+- Default bind `127.0.0.1:8787`; database precedence is configured `ILEARNED_DB`/`db` from explicit, local, or global config, then an existing local `./.ilearned/ilearned.db`, then an existing XDG data database; otherwise startup errors. Other config precedence is `serve --bind` > env (`ILEARNED_*`) > explicit `--config-file` overlay > local/global files > defaults.
 - Lifecycle defaults: active period 60d, forget period 120d, retention 60d (all configurable).
 - RRF constant `k=60`; default pagination `limit=20 offset=0`; enforced `MAX_LIMIT=100`.
 - Timestamps: SQLite INTEGER Unix epoch UTC; JSON/HTML RFC 3339.

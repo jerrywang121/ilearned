@@ -33,23 +33,17 @@ fn main() {
                 eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
-    // `mcp` defaults to a project-local store when no explicit db is given:
-    // ./.ilearned/ilearned.db (parent dirs are created by open_db).
-    // A `db` set in a config file also counts as explicit.
-    let db_from_file = files.as_ref().and_then(|f| f.db.clone());
-    let db = if matches!(&cli.command, Commands::Mcp(_))
-        && std::env::var_os("ILEARNED_DB").is_none()
-        && db_from_file.is_none()
-    {
-        Some(std::path::PathBuf::from("./.ilearned/ilearned.db"))
-    } else {
-        None
-    };
+    // Database resolution lives in `Config::load_with_files`: an explicit
+    // `--config-file` overlay, `ILEARNED_DB`, or global/local file `db`
+    // wins; otherwise an existing `./.ilearned/ilearned.db` is used, then
+    // an existing `$XDG_DATA_HOME/ilearned/ilearned.db`
+    // (`~/.local/share/ilearned/ilearned.db` fallback), else startup fails
+    // with "db path is not configured".
     let bind_override = match &cli.command {
         Commands::Serve(a) => a.bind,
         _ => None,
     };
-    let cfg = Config::load_with_files(db, bind_override, None, None, None, embedding, files)
+    let cfg = Config::load_with_files(None, bind_override, None, None, None, embedding, files)
         .unwrap_or_else(|e| {
             eprintln!("{}", render_error(&e, json));
             std::process::exit(exit_code(&e));

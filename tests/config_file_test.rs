@@ -5,7 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 use ilearned::config::{Config, EmbeddingConfig, FileConfig};
 
 static PROCESS_ENV_LOCK: Mutex<()> = Mutex::new(());
-const CONFIG_ENV_VARS: [&str; 11] = [
+const CONFIG_ENV_VARS: [&str; 13] = [
     "ILEARNED_DB",
     "ILEARNED_BIND",
     "ILEARNED_ACTIVE_DAYS",
@@ -17,6 +17,8 @@ const CONFIG_ENV_VARS: [&str; 11] = [
     "ILEARNED_EMBED_DIMS",
     "ILEARNED_EMBED_TIMEOUT_SECS",
     "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "HOME",
 ];
 
 fn isolated_command(dir: &std::path::Path) -> Command {
@@ -171,7 +173,11 @@ fn config_load_prefers_local_over_global_over_default() {
     ] {
         unsafe { std::env::remove_var(k) };
     }
-    let global: FileConfig = toml::from_str(r#"active_days = 10"#).unwrap();
+    let global: FileConfig = toml::from_str(
+        r#"db = "/tmp/x.db"
+active_days = 10"#,
+    )
+    .unwrap();
     let local: FileConfig = toml::from_str(r#"active_days = 99"#).unwrap();
     let merged = FileConfig::merge(Some(global), Some(local));
     let cfg = Config::load_with_files(None, None, None, None, None, None, merged).unwrap();
@@ -621,4 +627,173 @@ fn serve_bind_overrides_config_file_and_environment() {
     child.kill().unwrap();
     let status = child.wait().unwrap();
     panic!("serve did not listen on --bind {bind}; exited with {status}");
+}
+
+#[test]
+fn unconfigured_db_uses_local_ilearned_db_when_present() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let local_db = dir.path().join(".ilearned").join("ilearned.db");
+    std::fs::create_dir_all(local_db.parent().unwrap()).unwrap();
+    std::fs::write(&local_db, b"").unwrap();
+    let _guard = CwdGuard::lock(dir.path());
+    let _env = EnvGuard::capture();
+    unsafe { std::env::remove_var("ILEARNED_DB") };
+    let cfg = Config::load_with_files(None, None, None, None, None, None, None)
+        .expect("existing local db should resolve");
+    assert_eq!(cfg.db_path, PathBuf::from("./.ilearned/ilearned.db"));
+}
+
+#[test]
+fn unconfigured_db_falls_back_to_global_data_db() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let data_home = tempfile::TempDir::new().unwrap();
+    let global_db = data_home.path().join("ilearned").join("ilearned.db");
+    std::fs::create_dir_all(global_db.parent().unwrap()).unwrap();
+    std::fs::write(&global_db, b"").unwrap();
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::set_var("XDG_DATA_HOME", data_home.path());
+    }
+    let cfg = Config::load_with_files(None, None, None, None, None, None, None)
+        .expect("existing global db should resolve");
+    assert_eq!(cfg.db_path, global_db);
+}
+
+#[test]
+fn unconfigured_db_falls_back_to_home_data_db_without_xdg_override() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let home = tempfile::TempDir::new().unwrap();
+    let global_db = home
+        .path()
+        .join(".local")
+        .join("share")
+        .join("ilearned")
+        .join("ilearned.db");
+    std::fs::create_dir_all(global_db.parent().unwrap()).unwrap();
+    std::fs::write(&global_db, b"").unwrap();
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::set_var("HOME", home.path());
+    }
+    let cfg = Config::load_with_files(None, None, None, None, None, None, None)
+        .expect("existing HOME data db should resolve");
+    assert_eq!(cfg.db_path, global_db);
+}
+
+#[test]
+fn unconfigured_db_does_not_use_relative_global_path_without_home() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let misleading = cwd
+        .path()
+        .join(".local")
+        .join("share")
+        .join("ilearned")
+        .join("ilearned.db");
+    std::fs::create_dir_all(misleading.parent().unwrap()).unwrap();
+    std::fs::write(&misleading, b"").unwrap();
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("HOME");
+    }
+    let res = Config::load_with_files(None, None, None, None, None, None, None);
+    assert!(
+        matches!(res, Err(ilearned::AppError::InvalidInput(ref msg)) if msg.contains("not configured")),
+        "expected an unconfigured-db error, got {res:?}"
+    );
+}
+
+#[test]
+fn unconfigured_db_ignores_directory_named_like_local_database() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let local_db = cwd.path().join(".ilearned").join("ilearned.db");
+    std::fs::create_dir_all(&local_db).unwrap();
+    let data_home = tempfile::TempDir::new().unwrap();
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::set_var("XDG_DATA_HOME", data_home.path());
+    }
+    let res = Config::load_with_files(None, None, None, None, None, None, None);
+    assert!(
+        matches!(res, Err(ilearned::AppError::InvalidInput(ref msg)) if msg.contains("not configured")),
+        "expected an unconfigured-db error, got {res:?}"
+    );
+}
+
+#[test]
+fn unconfigured_db_errors_when_no_db_found() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let data_home = tempfile::TempDir::new().unwrap();
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::set_var("XDG_DATA_HOME", data_home.path());
+    }
+    let res = Config::load_with_files(None, None, None, None, None, None, None);
+    match res {
+        Err(ilearned::AppError::InvalidInput(msg)) => {
+            assert!(msg.contains("not configured"), "unexpected message: {msg}")
+        }
+        other => panic!("expected InvalidInput, got {other:?}"),
+    }
+}
+
+#[test]
+fn configured_db_wins_over_existing_fallback_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let local_db = dir.path().join(".ilearned").join("ilearned.db");
+    std::fs::create_dir_all(local_db.parent().unwrap()).unwrap();
+    std::fs::write(&local_db, b"").unwrap();
+    let configured = dir.path().join("configured.db");
+    let file: FileConfig = toml::from_str(&format!("db = {configured:?}")).unwrap();
+    let _guard = CwdGuard::lock(dir.path());
+    let _env = EnvGuard::capture();
+    unsafe { std::env::remove_var("ILEARNED_DB") };
+    let cfg = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(cfg.db_path, configured);
+}
+
+#[test]
+fn empty_database_environment_is_ignored() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let configured = dir.path().join("configured.db");
+    let file: FileConfig = toml::from_str(&format!("db = {configured:?}")).unwrap();
+    let _guard = CwdGuard::lock(dir.path());
+    let _env = EnvGuard::capture();
+    unsafe { std::env::set_var("ILEARNED_DB", "") };
+    let cfg = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(cfg.db_path, configured);
+}
+
+#[test]
+fn empty_database_file_value_is_not_configured() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let data_home = tempfile::TempDir::new().unwrap();
+    let home = tempfile::TempDir::new().unwrap();
+    let file = FileConfig {
+        db: Some(PathBuf::new()),
+        ..FileConfig::default()
+    };
+    let _guard = CwdGuard::lock(cwd.path());
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB");
+        std::env::set_var("XDG_DATA_HOME", data_home.path());
+        std::env::set_var("HOME", home.path());
+    }
+    let res = Config::load_with_files(None, None, None, None, None, None, Some(file));
+    assert!(
+        matches!(res, Err(ilearned::AppError::InvalidInput(ref msg)) if msg.contains("not configured")),
+        "expected an unconfigured-db error, got {res:?}"
+    );
 }

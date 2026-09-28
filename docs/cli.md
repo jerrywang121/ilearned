@@ -41,6 +41,14 @@ ilearned mcp [--json]
   `ILEARNED_RETENTION_DAYS` in the environment (defaults 60 / 120 / 60).
   Precedence is `serve --bind` (for bind only) > env > explicit config-file
   overlay > local file > global file > defaults.
+- Database path resolution uses a configured value first: `ILEARNED_DB`, then
+  the merged `db` value from the global/local/explicit config files. If no
+  database is configured, an existing `./.ilearned/ilearned.db` is used; if it
+  does not exist, an existing `$XDG_DATA_HOME/ilearned/ilearned.db` (or
+  `~/.local/share/ilearned/ilearned.db`) is used. If neither fallback exists,
+  startup fails with `db path is not configured` (exit 2). Resolution does not
+  create a fallback file; explicitly configured paths may be created when the
+  database is opened.
 - Config files (TOML, all keys optional): global
   `~/.config/ilearned/config.toml` (`$XDG_CONFIG_HOME` respected), overlaid
   per-field by local `./.ilearned/config.toml`, then by the explicit
@@ -99,10 +107,9 @@ ilearned mcp [--json]
   subcommand wins over every config-file and environment value.
 - `mcp` runs the same 9 tools as an MCP server over stdio (stdin/stdout)
   for harness use. It has no bind setting; stdout stays pure JSON-RPC
-  (logs/errors go to stderr). The DB defaults to
-  `./.ilearned/ilearned.db` under the working directory when `ILEARNED_DB`
-  and file `db` are all unset (parent dirs are created on open). A `db` set
-  in any selected/default config file counts as explicit. See
+  (logs/errors go to stderr). It follows the database resolution rules above:
+  configured paths win, otherwise existing local/global fallback files are
+  used, and startup fails if no database can be resolved. See
   [docs/mcp.md](docs/mcp.md).
 - `delete` on a never-existing `(topic, id)` exits 1 (not-found);
   deleting an already-deleted record is idempotent and succeeds.

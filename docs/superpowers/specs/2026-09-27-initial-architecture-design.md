@@ -96,9 +96,12 @@ The executable will provide these top-level modes:
 Server mode will default to `127.0.0.1:8787`. The database path, bind address,
 active period, forget period, forgotten/deleted retention period, and embedding
 settings are configurable. Configuration precedence is command-line flags,
-then environment variables, then local defaults. The default database is a
-file named `ilearned.db` in the current working directory. A non-loopback bind
-is an explicit deployment choice and does not imply that authentication exists.
+then environment variables, then local/global configuration. For the database
+specifically, configured `ILEARNED_DB`/`db` values win; otherwise an existing
+project-local `./.ilearned/ilearned.db`, then an existing XDG data database, is
+selected. Startup errors when no configured or existing database can be
+resolved. A non-loopback bind is an explicit deployment choice and does not
+imply that authentication exists.
 
 The embedding configuration is optional. FTS5 remains usable when it is absent.
 When configured, embedding generation is best effort during add/modify and

@@ -241,6 +241,25 @@ impl FileConfig {
         PathBuf::from("./.ilearned/config.toml")
     }
 
+    /// Local (project) database fallback: `./.ilearned/ilearned.db` under
+    /// the CWD. Used only when no database is configured anywhere.
+    pub fn local_db_fallback() -> PathBuf {
+        PathBuf::from("./.ilearned/ilearned.db")
+    }
+
+    /// Global database fallback: `$XDG_DATA_HOME/ilearned/ilearned.db`,
+    /// falling back to `~/.local/share/ilearned/ilearned.db`.
+    /// Returns `None` when neither environment variable provides a usable
+    /// base directory.
+    pub fn global_data_db_path() -> Option<PathBuf> {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").filter(|path| !path.is_empty()) {
+            return Some(PathBuf::from(xdg).join("ilearned/ilearned.db"));
+        }
+        std::env::var_os("HOME")
+            .filter(|path| !path.is_empty())
+            .map(|home| PathBuf::from(home).join(".local/share/ilearned/ilearned.db"))
+    }
+
     fn load_path(path: &Path) -> Result<Option<Self>, AppError> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
@@ -288,8 +307,10 @@ impl FileConfig {
 }
 
 /// Runtime configuration.
-/// Precedence: explicit values > `ILEARNED_*` env > selected config overlay
-/// > local file > global file > defaults.
+/// Configured values use precedence: explicit values > `ILEARNED_*` env >
+/// selected config overlay > local file > global file. Non-database settings
+/// then use defaults; an unconfigured database uses existing fallback files or
+/// returns an error.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_path: PathBuf,
@@ -320,7 +341,8 @@ impl Config {
     }
 
     /// Env/file resolution with an explicit (already merged) file layer.
-    /// Explicit values take precedence over env, then file values, then defaults.
+    /// Explicit values take precedence over env, then file values. Non-database
+    /// settings use defaults; database resolution is handled above.
     pub fn load_with_files(
         db_path: Option<PathBuf>,
         bind: Option<SocketAddr>,
@@ -331,9 +353,39 @@ impl Config {
         file: Option<FileConfig>,
     ) -> Result<Self, AppError> {
         let db_path = db_path
-            .or_else(|| std::env::var_os("ILEARNED_DB").map(PathBuf::from))
-            .or_else(|| file.as_ref().and_then(|f| f.db.clone()))
-            .unwrap_or_else(|| PathBuf::from("./ilearned.db"));
+            .filter(|path| !path.as_os_str().is_empty())
+            .or_else(|| {
+                std::env::var_os("ILEARNED_DB")
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+            })
+            .or_else(|| {
+                file.as_ref()
+                    .and_then(|f| f.db.clone())
+                    .filter(|path| !path.as_os_str().is_empty())
+            });
+        // No configured database: probe the local project store, then the
+        // global data store. Error instead of silently creating a default.
+        let db_path = match db_path {
+            Some(path) => path,
+            None => {
+                let local = FileConfig::local_db_fallback();
+                if local.is_file() {
+                    local
+                } else if let Some(global) =
+                    FileConfig::global_data_db_path().filter(|path| path.is_file())
+                {
+                    global
+                } else {
+                    return Err(AppError::InvalidInput(
+                        "db path is not configured: set db in a config file or \
+                         ILEARNED_DB, or create ./.ilearned/ilearned.db or the \
+                         XDG data database"
+                            .to_string(),
+                    ));
+                }
+            }
+        };
         let bind = if let Some(bind) = bind {
             bind
         } else if let Some(bind) = parse_env("ILEARNED_BIND")? {

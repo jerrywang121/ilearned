@@ -117,7 +117,7 @@ Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at 
 
 Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
 
-For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout), defaulting to a project-local `./.ilearned/ilearned.db` when `ILEARNED_DB` and configured database paths are unset:
+For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout). When no database is configured, it uses an existing project-local `./.ilearned/ilearned.db`, then an existing XDG data database (`$XDG_DATA_HOME/ilearned/ilearned.db`, or `~/.local/share/ilearned/ilearned.db`). If neither exists, startup reports that the database path is not configured:
 
 ```json
 { "mcp": { "ilearned": { "type": "local",
@@ -142,7 +142,7 @@ per-field by local `./.ilearned/config.toml`, then by the explicit
 
 | Setting | TOML key | Env | Default |
 | --- | --- | --- | --- |
-| Database path | `db` | `ILEARNED_DB` | `./ilearned.db` |
+| Database path | `db` | `ILEARNED_DB` | Existing `./.ilearned/ilearned.db`, then existing `$XDG_DATA_HOME/ilearned/ilearned.db` (or `~/.local/share/ilearned/ilearned.db`); otherwise an error |
 | Bind address | `bind` | `ILEARNED_BIND` | `127.0.0.1:8787` |
 | Active period (days) | `active_days` | `ILEARNED_ACTIVE_DAYS` | `60` |
 | Forget period (days) | `forget_days` | `ILEARNED_FORGET_DAYS` | `120` |

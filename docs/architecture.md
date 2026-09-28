@@ -66,8 +66,9 @@ initialization, migrations, and all surface adapters.
 
 - One binary: CLI subcommands + `serve` mode; REST + web + MCP share one
   listener (default `127.0.0.1:8787`); `ilearned mcp` serves the same MCP
-  tools over stdio with a project-local default DB
-  (`./.ilearned/ilearned.db`).
+  tools over stdio. Database resolution uses configured paths first, then an
+  existing project-local `./.ilearned/ilearned.db`, then an existing XDG data
+  database; startup fails when none is configured or present.
 - Single-user local-first; no authentication.
 - Explicit `(topic, id)` reads go through `MemoryService::get` (sole entry):
   reconciles first, `deleted`/missing read as `NotFound`; `forgotten` and

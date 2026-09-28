@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -27,6 +27,10 @@ impl StdioChild {
         let mut child = Command::new(bin())
             .args(args)
             .current_dir(cwd)
+            .env_remove("ILEARNED_DB")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_DATA_HOME")
+            .env("HOME", cwd.join("empty-home"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -151,9 +155,37 @@ fn stdio_add_then_search_roundtrip() {
 }
 
 #[test]
-fn stdio_defaults_db_to_dot_ilearned_dir() {
+fn stdio_requires_configured_or_existing_database() {
     let dir = TempDir::new().unwrap();
-    // No explicit database config: server must persist to ./.ilearned/ilearned.db under cwd.
+    // No configured or existing database: startup must fail instead of
+    // silently creating a default path.
+    let mut c = StdioChild::spawn(&["mcp"], dir.path());
+    drop(c.stdin);
+    let status = c.child.wait().unwrap();
+    assert_eq!(status.code(), Some(2));
+    let mut stderr = String::new();
+    c.child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(
+        stderr.contains("db path is not configured"),
+        "stderr should explain the missing database path: {stderr}"
+    );
+    assert!(
+        !dir.path().join(".ilearned").join("ilearned.db").exists(),
+        "an unconfigured database must not be created"
+    );
+}
+
+#[test]
+fn stdio_uses_existing_local_database_when_unconfigured() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join(".ilearned").join("ilearned.db");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    std::fs::write(&db, b"").unwrap();
     let mut c = StdioChild::spawn(&["mcp"], dir.path());
     handshake(&mut c);
     let added = c.request(
@@ -163,8 +195,8 @@ fn stdio_defaults_db_to_dot_ilearned_dir() {
     assert!(added.get("result").is_some(), "add must succeed: {added}");
     c.shutdown();
     assert!(
-        dir.path().join(".ilearned").join("ilearned.db").exists(),
-        "./.ilearned/ilearned.db must be created under the project dir"
+        db.exists(),
+        "the existing local database should remain in use"
     );
 }
 
