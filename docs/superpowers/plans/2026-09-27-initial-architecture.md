@@ -14,7 +14,7 @@
 
 - One binary: CLI subcommands + `serve` mode; REST + web + MCP share one listener.
 - Single-user local-first; no auth, no multi-user ownership.
-- Default bind `127.0.0.1:8787`; default DB `./ilearned.db`; config precedence flags > env (`ILEARNED_*`) > defaults.
+- Default bind `127.0.0.1:8787`; default DB `./ilearned.db`; config precedence `serve --bind` > env (`ILEARNED_*`) > explicit `--config-file` overlay > local/global files > defaults.
 - Lifecycle defaults: active period 60d, forget period 120d, retention 60d (all configurable).
 - RRF constant `k=60`; default pagination `limit=20 offset=0`; enforced `MAX_LIMIT=100`.
 - Timestamps: SQLite INTEGER Unix epoch UTC; JSON/HTML RFC 3339.
@@ -264,7 +264,7 @@ git commit -m "feat: embedding provider, vector store, semantic search with RRF"
 **Interfaces:**
 - Consumes: `MemoryService<SqliteRepo>`, `Config` from Tasks 1–4.
 - Produces:
-  - clap `Cli { db: Option<PathBuf>, bind: Option<SocketAddr>, json: bool, command: Commands }`, `Commands::{Add{topic,when,if_,do_,check}, Search{topic,text,semantic,limit,offset,deep}, Modify{topic,id,when,if_,do_,check}, Delete{topic,id,yes}, Promote{topic,id}, Downgrade{topic,id}, Clear{topic,all,yes}, Serve{}}`
+  - clap `Cli { config_file: Option<PathBuf>, command: Commands }`; the only global flag is `--config-file PATH`, which overlays global and local TOML files. Runtime settings otherwise come from `ILEARNED_*` environment variables and the selected file. `--json` is a per-command option, and `serve --bind` is a subcommand-only override over env/files.
   - `pub fn run_cli<S: ExperienceRepo + VectorStore>(svc: &MemoryService<S>, cmd: &Commands, json: bool) -> Result<i32, AppError>`; exit codes 0 ok / 1 not-found / 2 invalid / 3 embedding-unavailable / 4 internal; stderr structured `{"error":...}` when `--json`.
   - Destructive rule: `delete`/`clear` require `--yes` or interactive `y/N` prompt; `clear` requires exactly one of `--topic`/`--all`.
 

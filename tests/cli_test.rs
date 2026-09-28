@@ -11,7 +11,10 @@ fn bin() -> std::path::PathBuf {
 }
 
 fn db_arg(dir: &TempDir) -> String {
-    dir.path().join("t.db").to_string_lossy().to_string()
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
+    config.to_string_lossy().to_string()
 }
 
 #[test]
@@ -20,8 +23,20 @@ fn add_search_json_roundtrip() {
     let db = db_arg(&dir);
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "add", "--topic", "rust", "--when", "w", "--if", "i", "--do",
-            "d", "--check", "c",
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "rust",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
         ])
         .output()
         .unwrap();
@@ -35,7 +50,7 @@ fn add_search_json_roundtrip() {
     assert!(v["id"].as_str().is_some());
 
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "search", "--topic", "rust"])
+        .args(["--config-file", &db, "search", "--json", "--topic", "rust"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -50,8 +65,20 @@ fn topic_list_and_search_json() {
     for topic in ["travel/hotel/checkout", "travel/flight"] {
         let out = Command::new(bin())
             .args([
-                "--db", &db, "--json", "add", "--topic", topic, "--when", "w", "--if", "i", "--do",
-                "d", "--check", "c",
+                "--config-file",
+                &db,
+                "add",
+                "--json",
+                "--topic",
+                topic,
+                "--when",
+                "w",
+                "--if",
+                "i",
+                "--do",
+                "d",
+                "--check",
+                "c",
             ])
             .output()
             .unwrap();
@@ -63,7 +90,15 @@ fn topic_list_and_search_json() {
     }
     // list --level 1 collapses to the shared prefix.
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "topic", "list", "--level", "1"])
+        .args([
+            "--config-file",
+            &db,
+            "topic",
+            "list",
+            "--json",
+            "--level",
+            "1",
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -71,7 +106,14 @@ fn topic_list_and_search_json() {
     assert_eq!(v, serde_json::json!(["travel"]));
     // search with a # pattern returns the full topics sorted.
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "topic", "search", "travel/#"])
+        .args([
+            "--config-file",
+            &db,
+            "topic",
+            "search",
+            "--json",
+            "travel/#",
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -88,8 +130,20 @@ fn destructive_requires_confirmation() {
     let db = db_arg(&dir);
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "add", "--topic", "t", "--when", "w", "--if", "i", "--do", "d",
-            "--check", "c",
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "t",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
         ])
         .output()
         .unwrap();
@@ -99,7 +153,7 @@ fn destructive_requires_confirmation() {
 
     // Answer "n" to the prompt: non-zero exit, record still present.
     let mut child = Command::new(bin())
-        .args(["--db", &db, "delete", "--topic", "t", "--id", &id])
+        .args(["--config-file", &db, "delete", "--topic", "t", "--id", &id])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -109,7 +163,7 @@ fn destructive_requires_confirmation() {
     let out = child.wait_with_output().unwrap();
     assert!(!out.status.success());
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "search", "--topic", "t"])
+        .args(["--config-file", &db, "search", "--json", "--topic", "t"])
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -117,7 +171,16 @@ fn destructive_requires_confirmation() {
 
     // --yes goes through.
     let out = Command::new(bin())
-        .args(["--db", &db, "delete", "--topic", "t", "--id", &id, "--yes"])
+        .args([
+            "--config-file",
+            &db,
+            "delete",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+            "--yes",
+        ])
         .output()
         .unwrap();
     assert!(
@@ -132,7 +195,7 @@ fn clear_requires_topic_or_all() {
     let dir = TempDir::new().unwrap();
     let db = db_arg(&dir);
     let out = Command::new(bin())
-        .args(["--db", &db, "clear"])
+        .args(["--config-file", &db, "clear"])
         .output()
         .unwrap();
     // clap error => exit code 2.
@@ -145,8 +208,20 @@ fn clear_accepts_yes_with_target() {
     let db = db_arg(&dir);
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "add", "--topic", "t", "--when", "w", "--if", "i", "--do", "d",
-            "--check", "c",
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "t",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
         ])
         .output()
         .unwrap();
@@ -154,7 +229,15 @@ fn clear_accepts_yes_with_target() {
 
     // --topic combined with --yes must be accepted (not a clap conflict).
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "clear", "--topic", "t", "--yes"])
+        .args([
+            "--config-file",
+            &db,
+            "clear",
+            "--json",
+            "--topic",
+            "t",
+            "--yes",
+        ])
         .output()
         .unwrap();
     assert!(
@@ -165,8 +248,20 @@ fn clear_accepts_yes_with_target() {
 
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "add", "--topic", "t", "--when", "w", "--if", "i", "--do", "d",
-            "--check", "c",
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "t",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
         ])
         .output()
         .unwrap();
@@ -174,7 +269,7 @@ fn clear_accepts_yes_with_target() {
 
     // --all combined with --yes must be accepted (not a clap conflict).
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "clear", "--all", "--yes"])
+        .args(["--config-file", &db, "clear", "--json", "--all", "--yes"])
         .output()
         .unwrap();
     assert!(

@@ -214,11 +214,16 @@ ilearned clear (--topic TOPIC | --all)
 ilearned serve
 ```
 
-Global configuration flags and a `--json` output mode are available wherever
-they make sense. Human output is intended for interactive use; JSON output is
-stable for agent and script use. Destructive delete/clear commands require an
-explicit confirmation, and CLI failures write a structured error to stderr and
-return a non-zero exit code.
+The CLI has one global configuration selector, `--config-file PATH`, which
+overlays the default global and local TOML files for that invocation. Runtime
+settings otherwise come from environment variables and config files; the
+`serve --bind ADDR` subcommand option is the highest-precedence bind override.
+The config selector and all runtime settings are CLI-only: REST, web, and MCP
+surfaces do not expose configuration controls. A `--json` output mode is
+available on individual CLI commands, not as a global option. Human output is
+intended for interactive use; JSON output is stable for agent and script use.
+Destructive delete/clear commands require an explicit confirmation, and CLI
+failures write a structured error to stderr and return a non-zero exit code.
 
 ### REST
 

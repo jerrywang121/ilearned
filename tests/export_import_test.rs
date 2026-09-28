@@ -127,14 +127,29 @@ fn bin() -> std::path::PathBuf {
 }
 
 fn db_arg(dir: &tempfile::TempDir) -> String {
-    dir.path().join("t.db").to_string_lossy().to_string()
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
+    config.to_string_lossy().to_string()
 }
 
 fn add_json(db: &str, topic: &str, when: &str) {
     let out = Command::new(bin())
         .args([
-            "--db", db, "--json", "add", "--topic", topic, "--when", when, "--if", "i", "--do",
-            "d", "--check", "c",
+            "--config-file",
+            db,
+            "add",
+            "--json",
+            "--topic",
+            topic,
+            "--when",
+            when,
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
         ])
         .output()
         .unwrap();
@@ -155,7 +170,7 @@ fn cli_export_import_file_roundtrip() {
     let file_s = file.to_string_lossy().to_string();
 
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "export", "--file", &file_s])
+        .args(["--config-file", &db, "export", "--json", "--file", &file_s])
         .output()
         .unwrap();
     assert!(
@@ -167,14 +182,20 @@ fn cli_export_import_file_roundtrip() {
     assert_eq!(v["exported"], 2);
 
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "clear", "--all", "--yes"])
+        .args(["--config-file", &db, "clear", "--json", "--all", "--yes"])
         .output()
         .unwrap();
     assert!(out.status.success());
 
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "import", "--file", &file_s, "--merge",
+            "--config-file",
+            &db,
+            "import",
+            "--json",
+            "--file",
+            &file_s,
+            "--merge",
         ])
         .output()
         .unwrap();
@@ -191,7 +212,7 @@ fn cli_export_import_file_roundtrip() {
     assert_eq!(v["errors"], 0);
 
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "search", "--topic", "t"])
+        .args(["--config-file", &db, "search", "--json", "--topic", "t"])
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -204,7 +225,7 @@ fn cli_export_stdout_is_jsonl() {
     let db = db_arg(&dir);
     add_json(&db, "t", "stream me");
     let out = Command::new(bin())
-        .args(["--db", &db, "export"])
+        .args(["--config-file", &db, "export"])
         .output()
         .unwrap();
     assert!(
@@ -234,7 +255,13 @@ fn cli_import_counts_bad_lines_and_keeps_good_ones() {
 
     let out = Command::new(bin())
         .args([
-            "--db", &db, "--json", "import", "--file", &file_s, "--merge",
+            "--config-file",
+            &db,
+            "import",
+            "--json",
+            "--file",
+            &file_s,
+            "--merge",
         ])
         .output()
         .unwrap();
@@ -247,7 +274,7 @@ fn cli_import_counts_bad_lines_and_keeps_good_ones() {
     assert_eq!(v["errors"], 1);
 
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "search", "--topic", "t"])
+        .args(["--config-file", &db, "search", "--json", "--topic", "t"])
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -260,7 +287,7 @@ fn cli_import_reads_stdin_without_merge() {
     let db = db_arg(&dir);
     let line = serde_json::to_string(&exp("t", "file-id-1", "via stdin")).unwrap();
     let mut child = Command::new(bin())
-        .args(["--db", &db, "--json", "import"])
+        .args(["--config-file", &db, "import", "--json"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -282,7 +309,7 @@ fn cli_import_reads_stdin_without_merge() {
     assert_eq!(v["new"], 1);
     // Without --merge the file id is replaced with a fresh one.
     let out = Command::new(bin())
-        .args(["--db", &db, "--json", "search", "--topic", "t"])
+        .args(["--config-file", &db, "search", "--json", "--topic", "t"])
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

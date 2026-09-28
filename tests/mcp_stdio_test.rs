@@ -8,6 +8,13 @@ fn bin() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_ilearned"))
 }
 
+fn config_arg(dir: &TempDir) -> String {
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
+    config.to_string_lossy().to_string()
+}
+
 struct StdioChild {
     child: std::process::Child,
     stdin: std::process::ChildStdin,
@@ -99,8 +106,8 @@ fn handshake(c: &mut StdioChild) {
 #[test]
 fn stdio_lists_seven_tools() {
     let dir = TempDir::new().unwrap();
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
-    let mut c = StdioChild::spawn(&["--db", &db, "mcp"], dir.path());
+    let config = config_arg(&dir);
+    let mut c = StdioChild::spawn(&["--config-file", &config, "mcp"], dir.path());
     handshake(&mut c);
     let resp = c.request("tools/list", serde_json::json!({}));
     let tools = resp["result"]["tools"].as_array().unwrap();
@@ -126,8 +133,8 @@ fn stdio_lists_seven_tools() {
 #[test]
 fn stdio_add_then_search_roundtrip() {
     let dir = TempDir::new().unwrap();
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
-    let mut c = StdioChild::spawn(&["--db", &db, "mcp"], dir.path());
+    let config = config_arg(&dir);
+    let mut c = StdioChild::spawn(&["--config-file", &config, "mcp"], dir.path());
     handshake(&mut c);
     let added = c.request(
         "tools/call",
@@ -146,7 +153,7 @@ fn stdio_add_then_search_roundtrip() {
 #[test]
 fn stdio_defaults_db_to_dot_ilearned_dir() {
     let dir = TempDir::new().unwrap();
-    // No --db flag: server must persist to ./.ilearned/ilearned.db under cwd.
+    // No explicit database config: server must persist to ./.ilearned/ilearned.db under cwd.
     let mut c = StdioChild::spawn(&["mcp"], dir.path());
     handshake(&mut c);
     let added = c.request(
@@ -164,8 +171,8 @@ fn stdio_defaults_db_to_dot_ilearned_dir() {
 #[test]
 fn stdio_topics_list_and_search() {
     let dir = TempDir::new().unwrap();
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
-    let mut c = StdioChild::spawn(&["--db", &db, "mcp"], dir.path());
+    let config = config_arg(&dir);
+    let mut c = StdioChild::spawn(&["--config-file", &config, "mcp"], dir.path());
     handshake(&mut c);
     let added = c.request(
         "tools/call",

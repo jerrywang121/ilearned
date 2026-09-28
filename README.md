@@ -52,7 +52,7 @@ ilearned add --topic rust --when "deploy fails" --if "alert fires" \
   --do "restart worker" --check "health ok"
 
 # Search it (human output by default, --json for agents/scripts)
-ilearned --json search --topic rust --text deploy
+ilearned search --topic rust --text deploy --json
 
 # Positive feedback
 ilearned promote --topic rust --id <id>
@@ -66,26 +66,23 @@ ilearned serve
 ### CLI
 
 ```text
-ilearned [--db PATH] [--bind ADDR] [--json] [--active-days N]
-         [--forget-days N] [--retention-days N]
-         [--embed-endpoint URL] [--embed-model NAME] [--embed-api-key KEY]
-         [--embed-dims N] [--embed-timeout-secs N] <command>
+ilearned [--config-file PATH] <command>
 
-ilearned add --topic TOPIC --when TEXT --if TEXT --do TEXT --check TEXT
+ilearned add --topic TOPIC --when TEXT --if TEXT --do TEXT --check TEXT [--json]
 ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
-                 [--limit N] [--offset N] [--deep]
-ilearned topic list [--level N] [--limit N] [--offset N] [--deep]
-ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep]
+                  [--limit N] [--offset N] [--deep] [--json]
+ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
+ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep] [--json]
 ilearned modify --topic TOPIC --id ID [--when TEXT] [--if TEXT]
-                 [--do TEXT] [--check TEXT]
-ilearned delete --topic TOPIC --id ID [--yes]
-ilearned promote --topic TOPIC --id ID
-ilearned downgrade --topic TOPIC --id ID
-ilearned clear (--topic TOPIC | --all) [--yes]
-ilearned export [--topic TOPIC] [--deep] [--file PATH]
-ilearned import [--file PATH] [--merge]
-ilearned serve [--bind ADDR]
-ilearned mcp
+                  [--do TEXT] [--check TEXT] [--json]
+ilearned delete --topic TOPIC --id ID [--yes] [--json]
+ilearned promote --topic TOPIC --id ID [--json]
+ilearned downgrade --topic TOPIC --id ID [--json]
+ilearned clear (--topic TOPIC | --all) [--yes] [--json]
+ilearned export [--topic TOPIC] [--deep] [--file PATH] [--json]
+ilearned import [--file PATH] [--merge] [--json]
+ilearned serve [--bind ADDR] [--json]
+ilearned mcp [--json]
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
@@ -120,7 +117,7 @@ Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at 
 
 Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
 
-For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout), defaulting to a project-local `./.ilearned/ilearned.db` when `--db`/`ILEARNED_DB` are unset:
+For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout), defaulting to a project-local `./.ilearned/ilearned.db` when `ILEARNED_DB` and configured database paths are unset:
 
 ```json
 { "mcp": { "ilearned": { "type": "local",
@@ -130,28 +127,35 @@ For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio
 
 ## Configuration
 
-Precedence: **flags > `ILEARNED_*` env > local file > global file > defaults.**
+Precedence: **`serve --bind` > `ILEARNED_*` env > `--config-file` overlay > local file > global file > defaults.**
+
+Configuration is CLI-selected but CLI-only: `--config-file PATH` overlays the
+default global and local TOML files for that invocation. The selected file must
+exist. Configuration is consumed by every CLI invocation, including commands
+that select a database or use lifecycle/embedding settings; REST, web, and
+MCP protocols do not expose configuration controls or settings.
 
 Config files are TOML, all keys optional: global
 `~/.config/ilearned/config.toml` (`$XDG_CONFIG_HOME` respected), overlaid
-per-field by local `./.ilearned/config.toml` (see [docs/cli.md](docs/cli.md)
-for the schema).
+per-field by local `./.ilearned/config.toml`, then by the explicit
+`--config-file` layer (see [docs/cli.md](docs/cli.md) for the schema).
 
-| Setting | Flag | Env | Default |
+| Setting | TOML key | Env | Default |
 | --- | --- | --- | --- |
-| Database path | `--db` | `ILEARNED_DB` | `./ilearned.db` |
-| Bind address | `--bind` | `ILEARNED_BIND` | `127.0.0.1:8787` |
-| Active period (days) | `--active-days` | `ILEARNED_ACTIVE_DAYS` | `60` |
-| Forget period (days) | `--forget-days` | `ILEARNED_FORGET_DAYS` | `120` |
-| Retention (days) | `--retention-days` | `ILEARNED_RETENTION_DAYS` | `60` |
-| Embedding endpoint/model/key | `--embed-endpoint/model/api-key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
-| Embedding dims/timeout | `--embed-dims/timeout-secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims is informational only, never validated) |
+| Database path | `db` | `ILEARNED_DB` | `./ilearned.db` |
+| Bind address | `bind` | `ILEARNED_BIND` | `127.0.0.1:8787` |
+| Active period (days) | `active_days` | `ILEARNED_ACTIVE_DAYS` | `60` |
+| Forget period (days) | `forget_days` | `ILEARNED_FORGET_DAYS` | `120` |
+| Retention (days) | `retention_days` | `ILEARNED_RETENTION_DAYS` | `60` |
+| Embedding endpoint/model/key | `[embedding] endpoint/model/api_key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
+| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims is informational only, never validated) |
 | Search cap | — (code constant `MAX_LIMIT`) | — | `100` (larger `limit` clamps, no error) |
 
 `MAX_LIMIT` is a compile-time constant in `application::service`; there is
 no flag/env knob — a deliberate follow-up (see Roadmap). Semantic search
 stores one vector per experience per embedding `model` (`embeddings`
-keyed `(topic,id,model)`); **changing `--embed-model` or `--embed-dims`
+keyed `(topic,id,model)`); **changing the embedding model or dimensions in
+TOML/env
 orphans existing vectors** — old-model rows are never re-embedded or
 compared, and the new model only sees records written (or modified) after
 the switch. To migrate, re-embed after switching (e.g. `modify` each record

@@ -53,10 +53,14 @@ initialization, migrations, and all surface adapters.
   `serve` path are concrete over `SqliteRepo`).
 - Web templates are inline Askama `#[template(source = ...)]` (no
   `templates/` directory); auto-escaping is on.
-- `main.rs` builds the service from `Config` (lifecycle periods from
-  flags/env) and attaches an OpenAI-compatible embedding provider when
-  endpoint + model + API key are all configured; otherwise semantic
-  search returns `EmbeddingUnavailable` on every surface.
+- `main.rs` builds the service from `Config` (the CLI-selected config-file
+  overlay, default config files, and environment) and attaches an
+  OpenAI-compatible embedding provider when endpoint + model + API key are all
+  configured; otherwise semantic search returns `EmbeddingUnavailable` on
+  every surface. The only remaining runtime CLI override is `serve --bind`,
+  which takes precedence over config files and environment. REST, web, and
+  MCP are adapters over the resulting service and do not expose configuration
+  controls.
 
 ## Key invariants
 

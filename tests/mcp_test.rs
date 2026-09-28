@@ -73,10 +73,18 @@ async fn spawn_client() -> McpClient {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_ilearned"));
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
     let bind = format!("127.0.0.1:{port}");
     let child = tokio::process::Command::new(bin)
-        .args(["--db", &db, "serve", "--bind", &bind])
+        .args([
+            "--config-file",
+            &config.to_string_lossy(),
+            "serve",
+            "--bind",
+            &bind,
+        ])
         .kill_on_drop(true)
         .spawn()
         .unwrap();

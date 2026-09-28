@@ -18,67 +18,60 @@ fn build_service(cfg: &Config) -> Result<MemoryService<SqliteRepo>, ilearned::Ap
 
 fn main() {
     let cli = Cli::parse();
-    // Config files load first: embedding flags fall back through
-    // env, then the merged (local-over-global) file layer.
-    let files = FileConfig::load_files().unwrap_or_else(|e| {
-        eprintln!("{}", render_error(&e, cli.json));
-        std::process::exit(exit_code(&e));
-    });
+    let json = cli.command.json();
+    // The selected CLI config file overlays the default global/local files;
+    // environment variables then override file values per setting.
+    let files =
+        FileConfig::load_files_with_override(cli.config_file.as_deref()).unwrap_or_else(|e| {
+            eprintln!("{}", render_error(&e, json));
+            std::process::exit(exit_code(&e));
+        });
     let file_embedding = files.clone().and_then(|f| f.embedding);
-    let embedding = EmbeddingConfig::from_parts_with_files(
-        cli.embed_endpoint.clone(),
-        cli.embed_model.clone(),
-        cli.embed_api_key.clone(),
-        cli.embed_dims,
-        cli.embed_timeout_secs,
-        file_embedding,
-    )
-    .or_else(EmbeddingConfig::from_env);
+    let embedding =
+        EmbeddingConfig::from_parts_with_files(None, None, None, None, None, file_embedding)
+            .unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, json));
+                std::process::exit(exit_code(&e));
+            });
     // `mcp` defaults to a project-local store when no explicit db is given:
     // ./.ilearned/ilearned.db (parent dirs are created by open_db).
     // A `db` set in a config file also counts as explicit.
     let db_from_file = files.as_ref().and_then(|f| f.db.clone());
-    let db = cli.db.clone().or_else(|| {
-        if matches!(&cli.command, Commands::Mcp)
-            && std::env::var("ILEARNED_DB").is_err()
-            && db_from_file.is_none()
-        {
-            Some(std::path::PathBuf::from("./.ilearned/ilearned.db"))
-        } else {
-            None
-        }
-    });
-    let cfg = Config::load_with_files(
-        db,
-        cli.bind,
-        cli.active_days,
-        cli.forget_days,
-        cli.retention_days,
-        embedding,
-        files,
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("{}", render_error(&e, cli.json));
-        std::process::exit(exit_code(&e));
-    });
+    let db = if matches!(&cli.command, Commands::Mcp(_))
+        && std::env::var_os("ILEARNED_DB").is_none()
+        && db_from_file.is_none()
+    {
+        Some(std::path::PathBuf::from("./.ilearned/ilearned.db"))
+    } else {
+        None
+    };
+    let bind_override = match &cli.command {
+        Commands::Serve(a) => a.bind,
+        _ => None,
+    };
+    let cfg = Config::load_with_files(db, bind_override, None, None, None, embedding, files)
+        .unwrap_or_else(|e| {
+            eprintln!("{}", render_error(&e, json));
+            std::process::exit(exit_code(&e));
+        });
     match &cli.command {
         Commands::Serve(a) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
-            let bind = a.bind.or(cli.bind).unwrap_or(cfg.bind);
+            let bind = a.bind.unwrap_or(cfg.bind);
             let rt = Builder::new_multi_thread().enable_all().build().unwrap();
             rt.block_on(async {
                 if let Err(e) = ilearned::surfaces::http::serve(svc, bind).await {
-                    eprintln!("{}", render_error(&e, cli.json));
+                    eprintln!("{}", render_error(&e, json));
                     std::process::exit(exit_code(&e));
                 }
             });
         }
-        Commands::Mcp => {
+        Commands::Mcp(_) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
             let rt = Builder::new_multi_thread().enable_all().build().unwrap();
@@ -86,7 +79,7 @@ fn main() {
                 if let Err(e) =
                     ilearned::surfaces::http::mcp::serve_stdio(std::sync::Arc::new(svc)).await
                 {
-                    eprintln!("{}", render_error(&e, cli.json));
+                    eprintln!("{}", render_error(&e, json));
                     std::process::exit(exit_code(&e));
                 }
             });
@@ -100,27 +93,27 @@ fn main() {
         | Commands::Topic(_)
         | Commands::Clear(_)) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
-            match run_cli(&svc, cmd, cli.json) {
+            match run_cli(&svc, cmd, json) {
                 Ok(out) => {
                     println!("{out}");
                     std::process::exit(0);
                 }
                 Err(e) => {
-                    eprintln!("{}", render_error(&e, cli.json));
+                    eprintln!("{}", render_error(&e, json));
                     std::process::exit(exit_code(&e));
                 }
             }
         }
         Commands::Export(a) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
             let out = svc.export(a.topic.as_deref(), a.deep).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
             let mut body = String::new();
@@ -133,7 +126,7 @@ fn main() {
                     Err(e) => {
                         eprintln!(
                             "{}",
-                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                            render_error(&ilearned::AppError::Internal(e.to_string()), json)
                         );
                         std::process::exit(4);
                     }
@@ -149,7 +142,7 @@ fn main() {
                                     "{}",
                                     render_error(
                                         &ilearned::AppError::Internal(e.to_string()),
-                                        cli.json
+                                        json
                                     )
                                 );
                                 std::process::exit(4);
@@ -159,11 +152,11 @@ fn main() {
                     if let Err(e) = std::fs::write(path, &body) {
                         eprintln!(
                             "{}",
-                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                            render_error(&ilearned::AppError::Internal(e.to_string()), json)
                         );
                         std::process::exit(4);
                     }
-                    let msg = if cli.json {
+                    let msg = if json {
                         serde_json::json!({"exported": out.len()}).to_string()
                     } else {
                         format!("exported {} experience(s)", out.len())
@@ -176,14 +169,14 @@ fn main() {
         }
         Commands::Import(a) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
             let text = match &a.file {
                 Some(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
                     eprintln!(
                         "{}",
-                        render_error(&ilearned::AppError::Storage(e.to_string()), cli.json)
+                        render_error(&ilearned::AppError::Storage(e.to_string()), json)
                     );
                     std::process::exit(4);
                 }),
@@ -193,7 +186,7 @@ fn main() {
                     if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
                         eprintln!(
                             "{}",
-                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                            render_error(&ilearned::AppError::Internal(e.to_string()), json)
                         );
                         std::process::exit(4);
                     }
@@ -201,7 +194,7 @@ fn main() {
                 }
             };
             let summary = svc.import_jsonl(&text, a.merge).unwrap_or_else(|e| {
-                eprintln!("{}", render_error(&e, cli.json));
+                eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));
             });
             for err in &summary.errors {
@@ -212,11 +205,11 @@ fn main() {
                             "line {}: {}",
                             err.line, err.message
                         )),
-                        cli.json
+                        json
                     )
                 );
             }
-            let msg = if cli.json {
+            let msg = if json {
                 serde_json::json!({
                     "new": summary.new,
                     "updated": summary.updated,
