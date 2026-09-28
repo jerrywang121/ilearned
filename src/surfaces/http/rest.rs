@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::MemoryService;
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
+    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::error::AppError;
 use crate::storage::embeddings::VectorStore;
@@ -83,6 +83,17 @@ pub struct ClearParams {
     pub topic: Option<String>,
     pub all: Option<bool>,
     pub confirm: Option<bool>,
+}
+
+/// Topic list/search params: no `q` = list, with `q` = search
+/// (substring or `#` multi-level wildcard pattern).
+#[derive(Debug, Deserialize)]
+pub struct TopicParams {
+    pub level: Option<u32>,
+    pub q: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+    pub deep: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -212,10 +223,29 @@ pub async fn clear<R: ExperienceRepo + VectorStore>(
     Ok(Json(serde_json::json!({"cleared": n})))
 }
 
+/// List/search distinct topics. Query params: `level` truncates hierarchy
+/// depth, `q` searches (substring or `#` pattern), `limit` (default 20,
+/// clamped to 100), `offset` (default 0), `deep` includes topics that only
+/// have inactive records. Returns 200 `["travel/hotel", ...]` sorted.
+pub async fn topics<R: ExperienceRepo + VectorStore>(
+    State(svc): State<Shared<R>>,
+    Query(p): Query<TopicParams>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let out = svc.list_topics(&TopicQuery {
+        query: p.q,
+        level: p.level,
+        limit: p.limit.unwrap_or(20),
+        offset: p.offset.unwrap_or(0),
+        deep: p.deep.unwrap_or(false),
+    })?;
+    Ok(Json(out))
+}
+
 pub fn rest_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared<R>> {
     Router::new()
         .route("/healthz", get(healthz::<R>))
         .route("/api/v1/experiences", get(search::<R>).post(add::<R>))
+        .route("/api/v1/topics", get(topics::<R>))
         .route(
             "/api/v1/experiences/:topic/:id",
             patch(modify::<R>).delete(delete_one::<R>),
