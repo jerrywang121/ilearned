@@ -118,3 +118,61 @@ fn modify_blank_strings_are_not_updates() {
     };
     assert!(!cmd.has_updates());
 }
+
+#[test]
+fn topic_validation_accepts_hierarchy() {
+    for t in ["travel", "travel/hotel/checkout", "a-b/c_d/e9"] {
+        assert!(ilearned::domain::topics::validate_topic(t).is_ok(), "{t}");
+    }
+}
+
+#[test]
+fn topic_validation_rejects_bad_form() {
+    for t in [
+        "", "/", "travel/", "/travel", "a//b", "Travel", "a.b", "a b", "a#", "trav#", "a/b/",
+    ] {
+        assert!(ilearned::domain::topics::validate_topic(t).is_err(), "{t}");
+    }
+}
+
+#[test]
+fn topic_pattern_allows_hash_segments() {
+    for p in ["#", "travel/#", "#/checkout", "travel/#/checkout"] {
+        assert!(
+            ilearned::domain::topics::validate_topic_pattern(p).is_ok(),
+            "{p}"
+        );
+    }
+    for p in ["trav#", "travel/#/"] {
+        assert!(
+            ilearned::domain::topics::validate_topic_pattern(p).is_err(),
+            "{p}"
+        );
+    }
+}
+
+#[test]
+fn topic_matches_matrix() {
+    use ilearned::domain::topics::topic_matches as m;
+    assert!(m("travel/#", "travel"));
+    assert!(m("travel/#", "travel/hotel/checkout"));
+    assert!(!m("travel/#", "other/x"));
+    assert!(m("#", "anything/at/all"));
+    assert!(m("#/checkout", "travel/hotel/checkout"));
+    assert!(m("travel/#/checkout", "travel/hotel/checkout"));
+    assert!(m("travel/#/checkout", "travel/checkout"));
+    assert!(!m("travel", "travel/hotel")); // bare = exact only
+    assert!(m("travel", "travel"));
+}
+
+#[test]
+fn truncate_topic_applies_level() {
+    assert_eq!(
+        ilearned::domain::topics::truncate_topic("travel/hotel/checkout", 2),
+        "travel/hotel"
+    );
+    assert_eq!(
+        ilearned::domain::topics::truncate_topic("travel", 5),
+        "travel"
+    );
+}
