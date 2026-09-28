@@ -545,11 +545,19 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         self.reconcile()?;
         let base = self.repo.distinct_topics(q.deep)?;
         let query = q.query.clone().filter(|s| !s.trim().is_empty());
+        // Validate a `#` pattern once up front, not per stored topic.
+        let is_pattern = query
+            .as_deref()
+            .is_some_and(|p| p.split('/').any(|s| s == "#"));
+        if let Some(ref pat) = query {
+            if is_pattern {
+                validate_topic_pattern(pat)?;
+            }
+        }
         let mut out: Vec<String> = Vec::new();
         for t in base {
             if let Some(ref pat) = query {
-                if pat.split('/').any(|s| s == "#") {
-                    validate_topic_pattern(pat)?;
+                if is_pattern {
                     if !topic_matches(pat, &t) {
                         continue;
                     }

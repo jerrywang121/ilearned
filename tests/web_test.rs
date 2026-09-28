@@ -1,20 +1,42 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use ilearned::storage::repository::ExperienceRepo;
+
 struct TestServer {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     port: u16,
     _child: tokio::process::Child,
+}
+
+fn legacy_exp(topic: &str, id: &str) -> ilearned::domain::Experience {
+    ilearned::domain::Experience {
+        topic: topic.to_string(),
+        id: id.to_string(),
+        when_text: "w".to_string(),
+        if_text: "i".to_string(),
+        do_text: "d".to_string(),
+        check_text: "c".to_string(),
+        updated_at: chrono::Utc::now(),
+        good_count: 1,
+        bad_count: 0,
+        state: ilearned::domain::State::Active,
+    }
 }
 
 impl TestServer {
     fn url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{path}", self.port)
     }
+
+    fn db_path(&self) -> std::path::PathBuf {
+        self.dir.path().join("t.db")
+    }
 }
 
 async fn spawn_server() -> TestServer {
     let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("t.db").to_string_lossy().to_string();
     let listener =
         tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
             .await
@@ -22,7 +44,6 @@ async fn spawn_server() -> TestServer {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let bin = std::path::PathBuf::from(env!("CARGO_BIN_EXE_ilearned"));
-    let db = dir.path().join("t.db").to_string_lossy().to_string();
     let bind = format!("127.0.0.1:{port}");
     let child = tokio::process::Command::new(bin)
         .args(["--db", &db, "serve", "--bind", &bind])
@@ -30,7 +51,7 @@ async fn spawn_server() -> TestServer {
         .spawn()
         .unwrap();
     let srv = TestServer {
-        _dir: dir,
+        dir,
         port,
         _child: child,
     };
@@ -153,6 +174,36 @@ async fn topics_page_lists_and_escapes() {
         .unwrap();
     assert!(filtered.contains("travel/hotel"));
     assert!(!page.contains("<script>"));
+}
+
+#[tokio::test]
+async fn topics_page_escapes_legacy() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let db_path = srv.db_path();
+    // Legacy row bypassing service validation (pre-hierarchy data).
+    {
+        let repo = ilearned::storage::SqliteRepo::open(std::path::Path::new(&db_path)).unwrap();
+        repo.insert(&legacy_exp("<b>x</b>/y", "legacy01")).unwrap();
+    }
+    let page = client
+        .get(srv.url("/topics"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        page.contains("&lt;b&gt;x&lt;/b&gt;/y"),
+        "legacy topic must render escaped: {page}"
+    );
+    assert!(
+        !page.contains("<b>x</b>"),
+        "raw legacy markup must not leak"
+    );
 }
 
 #[tokio::test]

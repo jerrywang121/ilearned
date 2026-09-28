@@ -46,8 +46,16 @@ pub struct Cli {
     pub command: Commands,
 }
 
-/// Shared topic help: hierarchical form + wildcard note for search filters.
-pub const TOPIC_HELP: &str = "hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard";
+/// Shared topic help: canonical hierarchical form for write paths.
+pub const TOPIC_HELP: &str =
+    "hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated";
+
+/// Topic filter help for search/export: canonical form plus `#` wildcards.
+pub const TOPIC_FILTER_HELP: &str = "hierarchical topic filter, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; # is a multi-level wildcard (travel/#, #/checkout, travel/#/checkout); bare travel matches exact only";
+
+/// Exact-match topic help for destructive paths (no wildcards accepted).
+pub const TOPIC_EXACT_HELP: &str =
+    "hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; exact match only, no wildcards";
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
@@ -81,7 +89,7 @@ pub enum Commands {
 
 #[derive(Debug, Clone, Args)]
 pub struct AddArgs {
-    /// Hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard.
+    /// Hierarchical topic, e.g. travel/hotel/checkout.
     #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
     /// Scenario this experience applies to, including context, conditions, and constraints.
@@ -100,8 +108,8 @@ pub struct AddArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct SearchArgs {
-    /// Hierarchical topic filter, e.g. travel/hotel/checkout; # examples: travel/#, #/checkout. Segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard.
-    #[arg(long, help = TOPIC_HELP)]
+    /// Hierarchical topic filter; # examples: travel/#, #/checkout.
+    #[arg(long, help = TOPIC_FILTER_HELP)]
     pub topic: Option<String>,
     /// FTS5 full-text query.
     #[arg(long)]
@@ -168,7 +176,7 @@ pub struct IdArgs {
 #[derive(Debug, Clone, Args)]
 pub struct ClearArgs {
     /// Clear a single topic (exact match; no wildcards).
-    #[arg(long, conflicts_with = "all", required_unless_present = "all", help = TOPIC_HELP)]
+    #[arg(long, conflicts_with = "all", required_unless_present = "all", help = TOPIC_EXACT_HELP)]
     pub topic: Option<String>,
     /// Clear all topics.
     #[arg(long, conflicts_with = "topic", required_unless_present = "topic")]
@@ -187,8 +195,8 @@ pub struct ServeArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct ExportArgs {
-    /// Hierarchical topic filter; search accepts # multi-level wildcard.
-    #[arg(long, help = TOPIC_HELP)]
+    /// Hierarchical topic filter; # examples: travel/#, #/checkout.
+    #[arg(long, help = TOPIC_FILTER_HELP)]
     pub topic: Option<String>,
     /// Include inactive records (deleted/forgotten always excluded).
     #[arg(long)]

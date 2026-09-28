@@ -196,5 +196,11 @@ fn stdio_topics_list_and_search() {
         text.contains("isError") || missing.get("error").is_some(),
         "missing query must error: {missing}"
     );
+    // Deserialize failures surface as an isError tool result (rmcp
+    // validates args before the handler runs), not a -32602 envelope.
+    assert!(
+        text.contains("missing field `query`"),
+        "missing query must name the missing field: {missing}"
+    );
     c.shutdown();
 }

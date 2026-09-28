@@ -129,9 +129,7 @@ pub struct ClearArgs {
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct TopicsListArgs {
-    #[schemars(
-        description = "Hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard"
-    )]
+    #[schemars(description = "Limit hierarchy depth (applied after matching)")]
     pub level: Option<u32>,
     #[schemars(description = "Max topics (default 20, clamped to 100)")]
     pub limit: Option<u32>,
