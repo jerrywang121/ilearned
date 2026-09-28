@@ -96,10 +96,12 @@ fn fts_invalid_syntax_is_typed() {
 #[test]
 fn distinct_topics_respects_visibility() {
     let (_d, repo) = open_repo();
-    repo.insert(&exp("b-active", "a1", 0, State::Active)).unwrap();
+    repo.insert(&exp("b-active", "a1", 0, State::Active))
+        .unwrap();
     repo.insert(&exp("a-inactive", "i1", 0, State::Inactive))
         .unwrap();
-    repo.insert(&exp("c-deleted", "d1", 0, State::Deleted)).unwrap();
+    repo.insert(&exp("c-deleted", "d1", 0, State::Deleted))
+        .unwrap();
     repo.insert(&exp("d-forgotten", "f1", 0, State::Forgotten))
         .unwrap();
     assert_eq!(repo.distinct_topics(false).unwrap(), vec!["b-active"]);

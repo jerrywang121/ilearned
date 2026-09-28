@@ -305,7 +305,11 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             .repo
             .browse(sql_topic.as_deref(), deep)?
             .into_iter()
-            .filter(|e| wildcard.as_deref().is_none_or(|p| topic_matches(p, &e.topic)))
+            .filter(|e| {
+                wildcard
+                    .as_deref()
+                    .is_none_or(|p| topic_matches(p, &e.topic))
+            })
             .filter_map(|e| self.visible(e, deep))
             .collect())
     }
@@ -392,7 +396,9 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     /// split it into an exact SQL topic plus an optional wildcard pattern.
     /// Returns `(sql_topic, wildcard)`: exact patterns keep the fast
     /// `topic=?` path; `#` patterns fetch the superset and filter in Rust.
-    fn resolve_topic_filter(topic: Option<&str>) -> Result<(Option<String>, Option<String>), AppError> {
+    fn resolve_topic_filter(
+        topic: Option<&str>,
+    ) -> Result<(Option<String>, Option<String>), AppError> {
         match topic {
             None => Ok((None, None)),
             Some(t) => {
@@ -458,9 +464,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         self.reconcile()?;
         let (sql_topic, wildcard) = Self::resolve_topic_filter(q.topic.as_deref())?;
         let wildcard = wildcard.as_deref();
-        let matches_wildcard = |e: &Experience| {
-            wildcard.is_none_or(|p| topic_matches(p, &e.topic))
-        };
+        let matches_wildcard = |e: &Experience| wildcard.is_none_or(|p| topic_matches(p, &e.topic));
         let text = q.text.as_deref().filter(|t| !t.trim().is_empty());
         let semantic = q.semantic.as_deref().filter(|s| !s.trim().is_empty());
         match (text, semantic) {
@@ -536,9 +540,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     /// full topic; `level` truncates after matching, then dedups.
     pub fn list_topics(&self, q: &TopicQuery) -> Result<Vec<String>, AppError> {
         if q.level == Some(0) {
-            return Err(AppError::InvalidInput(
-                "level must be >= 1".to_string(),
-            ));
+            return Err(AppError::InvalidInput("level must be >= 1".to_string()));
         }
         self.reconcile()?;
         let base = self.repo.distinct_topics(q.deep)?;

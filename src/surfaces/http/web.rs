@@ -448,9 +448,7 @@ async fn topics_page<R: ExperienceRepo + VectorStore>(
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
     let t = TopicsTemplate {
         q: p.q.unwrap_or_default(),
-        level: p
-            .level
-            .unwrap_or_default(),
+        level: p.level.unwrap_or_default(),
         deep: p.deep.unwrap_or(false),
         results,
     };

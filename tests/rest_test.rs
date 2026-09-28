@@ -215,7 +215,10 @@ async fn topics_list_search_and_level_zero() {
         .json()
         .await
         .unwrap();
-    assert_eq!(list, serde_json::json!(["other/x", "travel/hotel/checkout"]));
+    assert_eq!(
+        list,
+        serde_json::json!(["other/x", "travel/hotel/checkout"])
+    );
     // level=1 truncates + dedups.
     let list: Value = client
         .get(srv.url("/api/v1/topics?level=1"))

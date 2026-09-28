@@ -103,16 +103,10 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
         )),
         Commands::Topic(t) => {
             let (query, level, limit, offset, deep) = match &t.command {
-                commands::TopicCommands::List(a) => {
-                    (None, a.level, a.limit, a.offset, a.deep)
+                commands::TopicCommands::List(a) => (None, a.level, a.limit, a.offset, a.deep),
+                commands::TopicCommands::Search(a) => {
+                    (Some(a.query.clone()), a.level, a.limit, a.offset, a.deep)
                 }
-                commands::TopicCommands::Search(a) => (
-                    Some(a.query.clone()),
-                    a.level,
-                    a.limit,
-                    a.offset,
-                    a.deep,
-                ),
             };
             let out = svc.list_topics(&TopicQuery {
                 query,

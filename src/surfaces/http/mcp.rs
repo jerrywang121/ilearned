@@ -143,7 +143,9 @@ pub struct TopicsListArgs {
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct TopicsSearchArgs {
-    #[schemars(description = "Substring or # multi-level wildcard pattern (e.g. hotel, travel/#, #/checkout)")]
+    #[schemars(
+        description = "Substring or # multi-level wildcard pattern (e.g. hotel, travel/#, #/checkout)"
+    )]
     pub query: String,
     #[schemars(description = "Limit hierarchy depth (applied after matching)")]
     pub level: Option<u32>,

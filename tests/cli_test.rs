@@ -50,8 +50,8 @@ fn topic_list_and_search_json() {
     for topic in ["travel/hotel/checkout", "travel/flight"] {
         let out = Command::new(bin())
             .args([
-                "--db", &db, "--json", "add", "--topic", topic, "--when", "w", "--if", "i",
-                "--do", "d", "--check", "c",
+                "--db", &db, "--json", "add", "--topic", topic, "--when", "w", "--if", "i", "--do",
+                "d", "--check", "c",
             ])
             .output()
             .unwrap();
@@ -76,7 +76,10 @@ fn topic_list_and_search_json() {
         .unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v, serde_json::json!(["travel/flight", "travel/hotel/checkout"]));
+    assert_eq!(
+        v,
+        serde_json::json!(["travel/flight", "travel/hotel/checkout"])
+    );
 }
 
 #[test]

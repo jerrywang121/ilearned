@@ -334,14 +334,13 @@ fn list_topics_level_query_pagination() {
         .unwrap();
     assert_eq!(got, vec!["travel"]);
     // pagination clamps; level=0 is invalid.
-    assert!(
-        s.list_topics(&TopicQuery {
+    assert!(s
+        .list_topics(&TopicQuery {
             limit: 0,
             ..Default::default()
         })
         .unwrap()
-        .is_empty()
-    );
+        .is_empty());
     assert!(matches!(
         s.list_topics(&TopicQuery {
             level: Some(0),
