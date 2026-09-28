@@ -302,8 +302,8 @@ impl IlearnedTools {
                 ));
             }
         };
-        let n = self.svc.clear(&cmd).map_err(map_err)?;
-        ok_json(&serde_json::json!({"cleared": n}))
+        let summary = self.svc.clear(&cmd).map_err(map_err)?;
+        ok_json(&serde_json::json!({"cleared": summary.items}))
     }
 
     #[tool(description = "List existing topics, optionally truncated to a hierarchy depth")]

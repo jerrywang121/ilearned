@@ -117,3 +117,10 @@ pub enum ClearCommand {
     Topic(String),
     All,
 }
+
+/// Counts of records transitioned to `deleted` by one clear operation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClearSummary {
+    pub topics: u64,
+    pub items: u64,
+}

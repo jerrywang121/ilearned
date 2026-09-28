@@ -713,6 +713,10 @@ fn config_init_generates_local_defaults_without_packaged_files() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "./.ilearned/config.toml"
+    );
     let text = std::fs::read_to_string(&target).expect("local config should be created");
     let parsed: FileConfig = toml::from_str(&text).expect("generated config should be valid TOML");
     assert_eq!(parsed.bind.as_deref(), Some("127.0.0.1:8787"));
@@ -734,6 +738,10 @@ fn config_init_global_uses_xdg_config_path() {
         out.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        global.to_string_lossy()
     );
     assert!(
         global.is_file(),

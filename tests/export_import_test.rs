@@ -170,7 +170,7 @@ fn cli_export_import_file_roundtrip() {
     let file_s = file.to_string_lossy().to_string();
 
     let out = Command::new(bin())
-        .args(["--config-file", &db, "export", "--json", "--file", &file_s])
+        .args(["--config-file", &db, "export", "--file", &file_s])
         .output()
         .unwrap();
     assert!(
@@ -178,8 +178,10 @@ fn cli_export_import_file_roundtrip() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["exported"], 2);
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "exported 2 experience(s)"
+    );
 
     let out = Command::new(bin())
         .args(["--config-file", &db, "clear", "--json", "--all", "--yes"])

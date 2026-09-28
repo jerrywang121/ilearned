@@ -14,19 +14,21 @@ ilearned delete --topic TOPIC --id ID [--yes] [--json]
 ilearned promote --topic TOPIC --id ID [--json]
 ilearned downgrade --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
-ilearned export [--topic TOPIC] [--deep] [--file PATH] [--json]
+ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
 ilearned config show
 ilearned config init [-g]
-ilearned serve [--bind ADDR] [--json]
-ilearned mcp [--json]
+ilearned serve [--bind ADDR]
+ilearned mcp
 ```
 
 - The only global flag is `--config-file PATH`. It overlays the global
   `~/.config/ilearned/config.toml` and local `./.ilearned/config.toml` files
   for that CLI invocation; the selected file must exist. Environment values
   override file values. `--json` is a per-command output option (for example,
-  `search --json`), not a global option. REST, web, and MCP surfaces expose no
+  `search --json`), not a global option. It is available only where the CLI
+  has a selectable human-vs-JSON result; `serve`/`mcp` have protocol output,
+  and `export` is always JSONL. REST, web, and MCP surfaces expose no
   configuration controls.
 - `config show` always prints JSON with the effective `db`, `bind`, lifecycle,
   and embedding settings plus a `config_files` array containing the existing
@@ -39,7 +41,7 @@ ilearned mcp [--json]
   (`$XDG_CONFIG_HOME/ilearned/config.toml` or `~/.config/ilearned/config.toml`).
   Parent directories are created, new files use owner-only permissions where
   supported, but an existing target is never overwritten and the command fails
-  while reporting its path.
+  while reporting its path. On success it prints only the generated path.
 - Topic form: hierarchical, e.g. `travel/hotel/checkout`; each `/`-separated
   segment must match `[a-z0-9_-]` (lowercase letters, digits, hyphen,
   underscore) — no empty segments, no uppercase, dots, or spaces. `#` is
@@ -88,8 +90,12 @@ ilearned mcp [--json]
   When endpoint+model+key are all present, the binary builds an
   OpenAI-compatible provider and `search --semantic` works; otherwise
   semantic queries exit 3.
-- `add` prints the created `Experience` (JSON: the record; human: one-line
-  summary plus fields). `search` prints a JSON array in `--json` mode.
+- `add` and `modify` return only `topic` and `id` to confirm the impacted
+  record; `delete` returns the same identity after soft deletion. In JSON mode
+  each is an object with exactly those two fields. Human output adds only a
+  short action label. `promote`/`downgrade` return `topic`, `id`,
+  `good_count`, and `bad_count` (plus a short human action label). `search`
+  prints a JSON array in `--json` mode.
   `limit` defaults to 20 and is clamped to `MAX_LIMIT=100` service-side
   (larger values behave as 100, no error); `limit=0` and over-range
   `offset` return `[]`. `text` + `semantic` together fuse both rankings
@@ -102,8 +108,9 @@ ilearned mcp [--json]
   interactive `y/N` prompt on stderr. Refusal (including EOF on stdin
   without `--yes`) aborts with exit code 2 and changes nothing.
 - `clear` requires exactly one of `--topic` / `--all` (enforced by clap;
-  violations exit 2).
-- `export` dumps experiences as JSONL (one `Experience` object per line in
+  violations exit 2). Success reports `topics` and `items` affected in JSON
+  mode; human output is `cleared N topic(s), M experience(s)`.
+- `export` always dumps experiences as JSONL (one `Experience` object per line in
   the REST wire shape: `topic/id/when/if/do/check`, RFC 3339 `updated_at`,
   `good_count`/`bad_count`/`state`). Optional `--topic` filter; `--deep`
   includes inactive (`deleted`/`forgotten` are always excluded, same as

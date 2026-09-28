@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension, Row};
 
-use crate::domain::commands::{ClearCommand, SearchQuery};
+use crate::domain::commands::{ClearCommand, ClearSummary, SearchQuery};
 use crate::domain::experience::{Experience, State};
 use crate::domain::lifecycle::{is_eligible, LifecycleConfig};
 use crate::error::AppError;
@@ -60,7 +60,7 @@ pub trait ExperienceRepo: Send + Sync {
     /// Soft-delete: mark deleted + refresh updated_at + set retention start.
     /// Returns true if a row was touched (idempotent on already-deleted).
     fn soft_delete(&self, topic: &str, id: &str, now: DateTime<Utc>) -> Result<bool, AppError>;
-    fn clear(&self, cmd: &ClearCommand, now: DateTime<Utc>) -> Result<u64, AppError>;
+    fn clear(&self, cmd: &ClearCommand, now: DateTime<Utc>) -> Result<ClearSummary, AppError>;
     /// FTS5/BM25 text search over eligible rows. Returns (experience, bm25 rank).
     fn search_fts(
         &self,
@@ -177,21 +177,44 @@ impl ExperienceRepo for SqliteRepo {
         Ok(n > 0)
     }
 
-    fn clear(&self, cmd: &ClearCommand, now: DateTime<Utc>) -> Result<u64, AppError> {
-        let db = self.db.lock().expect("db lock");
-        let n = match cmd {
-            ClearCommand::Topic(t) => db.execute(
-                "UPDATE experiences SET state='deleted', updated_at=?2, retention_started_at=?2
+    fn clear(&self, cmd: &ClearCommand, now: DateTime<Utc>) -> Result<ClearSummary, AppError> {
+        let mut db = self.db.lock().expect("db lock");
+        let tx = db.transaction()?;
+        let (items, topics): (i64, i64) = match cmd {
+            ClearCommand::Topic(t) => tx.query_row(
+                "SELECT COUNT(*), COUNT(DISTINCT topic) FROM experiences
                  WHERE topic=?1 AND state != 'deleted'",
-                params![t, to_epoch(&now)],
+                params![t],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )?,
-            ClearCommand::All => db.execute(
-                "UPDATE experiences SET state='deleted', updated_at=?1, retention_started_at=?1
+            ClearCommand::All => tx.query_row(
+                "SELECT COUNT(*), COUNT(DISTINCT topic) FROM experiences
                  WHERE state != 'deleted'",
-                params![to_epoch(&now)],
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )?,
         };
-        Ok(n as u64)
+        match cmd {
+            ClearCommand::Topic(t) => {
+                tx.execute(
+                    "UPDATE experiences SET state='deleted', updated_at=?2, retention_started_at=?2
+                     WHERE topic=?1 AND state != 'deleted'",
+                    params![t, to_epoch(&now)],
+                )?;
+            }
+            ClearCommand::All => {
+                tx.execute(
+                    "UPDATE experiences SET state='deleted', updated_at=?1, retention_started_at=?1
+                     WHERE state != 'deleted'",
+                    params![to_epoch(&now)],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(ClearSummary {
+            topics: topics as u64,
+            items: items as u64,
+        })
     }
 
     fn search_fts(

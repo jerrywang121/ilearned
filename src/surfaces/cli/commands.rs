@@ -76,11 +76,10 @@ impl Commands {
                 TopicCommands::List(a) => a.output.json,
                 TopicCommands::Search(a) => a.output.json,
             },
-            Self::Export(a) => a.output.json,
+            Self::Export(_) => false,
             Self::Import(a) => a.output.json,
             Self::Config(a) => matches!(&a.command, ConfigCommands::Show),
-            Self::Serve(a) => a.output.json,
-            Self::Mcp(a) => a.output.json,
+            Self::Serve(_) | Self::Mcp(_) => false,
         }
     }
 }
@@ -201,15 +200,10 @@ pub struct ServeArgs {
     /// Bind address override; takes precedence over config files and environment.
     #[arg(long)]
     pub bind: Option<SocketAddr>,
-    #[command(flatten)]
-    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
-pub struct McpArgs {
-    #[command(flatten)]
-    pub output: JsonArgs,
-}
+pub struct McpArgs {}
 
 #[derive(Debug, Clone, Args)]
 pub struct ExportArgs {
@@ -222,8 +216,6 @@ pub struct ExportArgs {
     /// Write to PATH instead of stdout (parent dirs created, overwritten).
     #[arg(long)]
     pub file: Option<PathBuf>,
-    #[command(flatten)]
-    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]

@@ -79,19 +79,20 @@ ilearned delete --topic TOPIC --id ID [--yes] [--json]
 ilearned promote --topic TOPIC --id ID [--json]
 ilearned downgrade --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
-ilearned export [--topic TOPIC] [--deep] [--file PATH] [--json]
+ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
 ilearned config show
 ilearned config init [-g]
-ilearned serve [--bind ADDR] [--json]
-ilearned mcp [--json]
+ilearned serve [--bind ADDR]
+ilearned mcp
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
 - `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file.
+- Mutation output is intentionally compact: `add`, `modify`, and `delete` return only `topic` and `id`; `promote` and `downgrade` return `topic`, `id`, `good_count`, and `bad_count`; `clear` returns the number of affected `topics` and `items`. `config init` prints only the generated file path. JSON output uses these same fields, while human output adds a short action label.
 - Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth, `--limit/--offset/--deep` paginate).
 - `modify` needs at least one non-blank field (blank-only values are ignored).
-- Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
+- Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` always dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
 
 Full reference: [docs/cli.md](docs/cli.md).

@@ -1,4 +1,5 @@
 use crate::domain::experience::Experience;
+use crate::domain::ClearSummary;
 use crate::error::AppError;
 
 /// Exit-code contract: 0 ok, 1 not-found, 2 invalid, 3 embedding, 4 internal.
@@ -27,6 +28,42 @@ pub fn render_experience(e: &Experience, json: bool) -> String {
             e.if_text,
             e.do_text,
             e.check_text
+        )
+    }
+}
+
+pub fn render_identity(topic: &str, id: &str, json: bool, action: &str) -> String {
+    if json {
+        serde_json::json!({"topic": topic, "id": id}).to_string()
+    } else {
+        format!("{action} ({topic}/{id})")
+    }
+}
+
+pub fn render_feedback(e: &Experience, json: bool, action: &str) -> String {
+    if json {
+        serde_json::json!({
+            "topic": e.topic,
+            "id": e.id,
+            "good_count": e.good_count,
+            "bad_count": e.bad_count,
+        })
+        .to_string()
+    } else {
+        format!(
+            "{action} ({}/{}) good={} bad={}",
+            e.topic, e.id, e.good_count, e.bad_count
+        )
+    }
+}
+
+pub fn render_clear(summary: ClearSummary, json: bool) -> String {
+    if json {
+        serde_json::json!({"topics": summary.topics, "items": summary.items}).to_string()
+    } else {
+        format!(
+            "cleared {} topic(s), {} experience(s)",
+            summary.topics, summary.items
         )
     }
 }

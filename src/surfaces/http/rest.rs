@@ -219,8 +219,8 @@ pub async fn clear<R: ExperienceRepo + VectorStore>(
             .into());
         }
     };
-    let n = svc.clear(&cmd)?;
-    Ok(Json(serde_json::json!({"cleared": n})))
+    let summary = svc.clear(&cmd)?;
+    Ok(Json(serde_json::json!({"cleared": summary.items})))
 }
 
 /// List/search distinct topics. Query params: `level` truncates hierarchy

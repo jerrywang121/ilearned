@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::application::ranking::{cosine, rrf_fuse, RRF_K};
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, ClearSummary, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::domain::experience::{Experience, State};
 use crate::domain::lifecycle::LifecycleConfig;
@@ -266,7 +266,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         Ok(e)
     }
 
-    pub fn clear(&self, cmd: &ClearCommand) -> Result<u64, AppError> {
+    pub fn clear(&self, cmd: &ClearCommand) -> Result<ClearSummary, AppError> {
         // Destructive path stays exact-match: `#` is pattern-only, never a target.
         if let ClearCommand::Topic(t) = cmd {
             validate_topic(t)?;

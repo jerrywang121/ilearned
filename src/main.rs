@@ -35,7 +35,7 @@ fn run_config_command(
                 FileConfig::local_path()
             };
             FileConfig::init(&path)?;
-            Ok(format!("initialized config file {}", path.display()))
+            Ok(path.display().to_string())
         }
     }
 }

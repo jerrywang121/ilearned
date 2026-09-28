@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use clap::Parser;
+use ilearned::surfaces::cli::Cli;
 use tempfile::TempDir;
 
 fn bin() -> std::path::PathBuf {
@@ -277,4 +279,200 @@ fn clear_accepts_yes_with_target() {
         "clear --all --yes rejected: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn mutation_json_outputs_only_identity_or_feedback_counts() {
+    let dir = TempDir::new().unwrap();
+    let db = db_arg(&dir);
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "t",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let added: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(added.as_object().unwrap().len(), 2);
+    assert_eq!(added["topic"], "t");
+    let id = added["id"].as_str().unwrap().to_string();
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "modify",
+            "--json",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+            "--when",
+            "updated",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let modified: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(modified, serde_json::json!({"topic": "t", "id": id}));
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "promote",
+            "--json",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let promoted: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        promoted,
+        serde_json::json!({"topic": "t", "id": id, "good_count": 2, "bad_count": 0})
+    );
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "downgrade",
+            "--json",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let downgraded: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        downgraded,
+        serde_json::json!({"topic": "t", "id": id, "good_count": 2, "bad_count": 1})
+    );
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "delete",
+            "--json",
+            "--yes",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let deleted: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(deleted, serde_json::json!({"topic": "t", "id": id}));
+}
+
+#[test]
+fn clear_json_reports_removed_topics_and_items() {
+    let dir = TempDir::new().unwrap();
+    let db = db_arg(&dir);
+
+    for topic in ["a", "a", "b"] {
+        let out = Command::new(bin())
+            .args([
+                "--config-file",
+                &db,
+                "add",
+                "--json",
+                "--topic",
+                topic,
+                "--when",
+                "w",
+                "--if",
+                "i",
+                "--do",
+                "d",
+                "--check",
+                "c",
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+    }
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "delete",
+            "--yes",
+            "--topic",
+            "b",
+            "--id",
+            "missing",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+
+    let out = Command::new(bin())
+        .args(["--config-file", &db, "search", "--json", "--topic", "b"])
+        .output()
+        .unwrap();
+    let records: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let b_id = records[0]["id"].as_str().unwrap().to_string();
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "delete",
+            "--yes",
+            "--topic",
+            "b",
+            "--id",
+            &b_id,
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let out = Command::new(bin())
+        .args(["--config-file", &db, "clear", "--json", "--all", "--yes"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let cleared: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(cleared, serde_json::json!({"topics": 1, "items": 2}));
+}
+
+#[test]
+fn json_is_rejected_for_protocol_and_jsonl_commands() {
+    for args in [
+        vec!["ilearned", "serve", "--json"],
+        vec!["ilearned", "mcp", "--json"],
+        vec!["ilearned", "export", "--json"],
+    ] {
+        assert!(
+            Cli::try_parse_from(args.clone()).is_err(),
+            "--json unexpectedly accepted for {:?}",
+            args
+        );
+    }
 }
