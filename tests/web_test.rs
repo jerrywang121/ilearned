@@ -106,6 +106,56 @@ async fn pages_render_and_escape() {
 }
 
 #[tokio::test]
+async fn topics_page_lists_and_escapes() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({"topic":"travel/hotel","when":"w","if":"i","do":"d","check":"c"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    // Index links to /topics.
+    let index = client
+        .get(srv.url("/"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(index.contains("/topics"), "index must link to topics page");
+    // /topics lists the topic; ?q= filters.
+    let page = client
+        .get(srv.url("/topics"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains("travel/hotel"));
+    let filtered = client
+        .get(srv.url("/topics?q=travel"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(filtered.contains("travel/hotel"));
+    assert!(!page.contains("<script>"));
+}
+
+#[tokio::test]
 async fn forms_validate_and_confirm() {
     let srv = spawn_server().await;
     let client = reqwest::Client::new();

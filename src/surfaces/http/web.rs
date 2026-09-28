@@ -7,7 +7,7 @@ use axum::{Form, Router};
 use serde::Deserialize;
 
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
+    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::domain::experience::Experience;
 use crate::error::AppError;
@@ -78,7 +78,7 @@ struct BaseTemplate {
 <label><input type="checkbox" name="deep" value="true" {% if deep %}checked{% endif %}> deep</label>
 <button type="submit">Search</button>
 </form>
-<p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/clear">clear</a></p>
+<p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a></p>
 <ul>
 {% for e in results %}
 <li><a href="/experiences/{{ e.topic }}/{{ e.id }}">{{ e.when_text }} — {{ e.check_text }}</a>
@@ -202,6 +202,36 @@ struct ErrorTemplate<'a> {
     title: &'a str,
     status: u16,
     message: &'a str,
+}
+
+#[derive(Template)]
+#[template(
+    source = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ilearned · topics</title>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}li{margin:.6em 0;border-bottom:1px solid #ddd;padding-bottom:.4em}.meta{color:#666;font-size:.9em}</style>
+</head><body>
+<h1>ilearned · topics</h1>
+<form method="get" action="/topics">
+<input name="q" value="{{ q }}" placeholder="search substring or # pattern">
+<input name="level" value="{{ level }}" placeholder="level">
+<label><input type="checkbox" name="deep" value="true" {% if deep %}checked{% endif %}> deep</label>
+<button type="submit">Search</button>
+</form>
+<p class="meta">{{ results.len() }} topic(s)</p>
+<ul>
+{% for t in results %}
+<li>{{ t }}</li>
+{% endfor %}
+</ul>
+<p><a href="/">back</a></p>
+</body></html>"#,
+    ext = "html"
+)]
+struct TopicsTemplate {
+    q: String,
+    level: String,
+    deep: bool,
+    results: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -383,6 +413,53 @@ async fn clear_page() -> Html<String> {
     Html(ClearTemplate.render().unwrap())
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct TopicsParams {
+    pub q: Option<String>,
+    pub level: Option<String>,
+    pub deep: Option<bool>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+/// Topic list/search page: `q` substring or `#` pattern, `level` depth
+/// truncation, `deep` includes inactive-only topics. Askama auto-escape ON.
+async fn topics_page<R: ExperienceRepo + VectorStore>(
+    State(svc): State<Shared<R>>,
+    Query(p): Query<TopicsParams>,
+) -> Result<Html<String>, WebErr> {
+    let level: Option<u32> = match p.level.clone().filter(|s| !s.trim().is_empty()) {
+        None => None,
+        Some(s) => Some(s.parse::<u32>().map_err(|_| {
+            WebErr(Box::new(err_page(
+                StatusCode::BAD_REQUEST,
+                "level must be a positive integer",
+            )))
+        })?),
+    };
+    let results = svc
+        .list_topics(&TopicQuery {
+            query: p.q.clone().filter(|s| !s.trim().is_empty()),
+            level,
+            limit: p.limit.unwrap_or(20),
+            offset: p.offset.unwrap_or(0),
+            deep: p.deep.unwrap_or(false),
+        })
+        .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    let t = TopicsTemplate {
+        q: p.q.unwrap_or_default(),
+        level: p
+            .level
+            .unwrap_or_default(),
+        deep: p.deep.unwrap_or(false),
+        results,
+    };
+    Ok(Html(t.render().map_err(|e| {
+        let WebErr(b) = tpl_err(e);
+        WebErr(b)
+    })?))
+}
+
 async fn clear_submit<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Form(f): Form<ClearForm>,
@@ -422,6 +499,7 @@ pub fn web_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared<
         )
         .route("/experiences/:topic/:id/delete", post(delete_action::<R>))
         .route("/clear", get(clear_page).post(clear_submit::<R>))
+        .route("/topics", get(topics_page::<R>))
 }
 
 #[allow(dead_code)]
