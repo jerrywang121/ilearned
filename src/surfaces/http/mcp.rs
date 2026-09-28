@@ -214,7 +214,9 @@ impl IlearnedTools {
                 check_text: a.check,
             })
             .map_err(map_err)?;
-        ok_json(&e)
+        ok_json(&serde_json::json!({
+            "added": {"topic": e.topic, "id": e.id}
+        }))
     }
 
     #[tool(
@@ -235,7 +237,9 @@ impl IlearnedTools {
                 check_text: a.check,
             })
             .map_err(map_err)?;
-        ok_json(&e)
+        ok_json(&serde_json::json!({
+            "modified": {"topic": e.topic, "id": e.id}
+        }))
     }
 
     #[tool(
@@ -246,7 +250,9 @@ impl IlearnedTools {
         Parameters(a): Parameters<DeleteArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.svc.delete(&a.topic, &a.id).map_err(map_err)?;
-        ok_json(&serde_json::json!({"deleted": true}))
+        ok_json(&serde_json::json!({
+            "deleted": {"topic": a.topic, "id": a.id}
+        }))
     }
 
     #[tool(description = "Promote an experience (increments good_count, restores to active)")]
@@ -261,7 +267,14 @@ impl IlearnedTools {
                 id: a.id,
             })
             .map_err(map_err)?;
-        ok_json(&e)
+        ok_json(&serde_json::json!({
+            "modified": {
+                "topic": e.topic,
+                "id": e.id,
+                "good_count": e.good_count,
+                "bad_count": e.bad_count,
+            }
+        }))
     }
 
     #[tool(description = "Downgrade an experience (increments bad_count)")]
@@ -276,7 +289,14 @@ impl IlearnedTools {
                 id: a.id,
             })
             .map_err(map_err)?;
-        ok_json(&e)
+        ok_json(&serde_json::json!({
+            "modified": {
+                "topic": e.topic,
+                "id": e.id,
+                "good_count": e.good_count,
+                "bad_count": e.bad_count,
+            }
+        }))
     }
 
     #[tool(
@@ -303,7 +323,12 @@ impl IlearnedTools {
             }
         };
         let summary = self.svc.clear(&cmd).map_err(map_err)?;
-        ok_json(&serde_json::json!({"cleared": summary.items}))
+        ok_json(&serde_json::json!({
+            "cleared": {
+                "num_of_topics": summary.topics,
+                "num_of_items": summary.items,
+            }
+        }))
     }
 
     #[tool(description = "List existing topics, optionally truncated to a hierarchy depth")]

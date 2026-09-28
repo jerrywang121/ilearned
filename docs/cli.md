@@ -90,12 +90,13 @@ ilearned mcp
   When endpoint+model+key are all present, the binary builds an
   OpenAI-compatible provider and `search --semantic` works; otherwise
   semantic queries exit 3.
-- `add` and `modify` return only `topic` and `id` to confirm the impacted
-  record; `delete` returns the same identity after soft deletion. In JSON mode
-  each is an object with exactly those two fields. Human output adds only a
-  short action label. `promote`/`downgrade` return `topic`, `id`,
-  `good_count`, and `bad_count` (plus a short human action label). `search`
-  prints a JSON array in `--json` mode.
+- In JSON mode, `add` returns `{"added":{"topic":"...","id":"..."}}`,
+  `modify` returns `{"modified":{"topic":"...","id":"..."}}`, and
+  `delete` returns `{"deleted":{"topic":"...","id":"..."}}` to confirm
+  the impacted record. `promote`/`downgrade` return
+  `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`.
+  Human output adds only a short action label. `search` prints a JSON array in
+  `--json` mode.
   `limit` defaults to 20 and is clamped to `MAX_LIMIT=100` service-side
   (larger values behave as 100, no error); `limit=0` and over-range
   `offset` return `[]`. `text` + `semantic` together fuse both rankings
@@ -108,8 +109,10 @@ ilearned mcp
   interactive `y/N` prompt on stderr. Refusal (including EOF on stdin
   without `--yes`) aborts with exit code 2 and changes nothing.
 - `clear` requires exactly one of `--topic` / `--all` (enforced by clap;
-  violations exit 2). Success reports `topics` and `items` affected in JSON
-  mode; human output is `cleared N topic(s), M experience(s)`.
+  violations exit 2). JSON success is
+  `{"cleared":{"num_of_topics":N,"num_of_items":M}}`; `num_of_topics` is
+  the number of unique topics affected. Human output is
+  `cleared N topic(s), M experience(s)`.
 - `export` always dumps experiences as JSONL (one `Experience` object per line in
   the REST wire shape: `topic/id/when/if/do/check`, RFC 3339 `updated_at`,
   `good_count`/`bad_count`/`state`). Optional `--topic` filter; `--deep`

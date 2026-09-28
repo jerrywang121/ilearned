@@ -41,7 +41,14 @@
   `topics_search{query,level?,limit?,offset?,deep?}` (`query` is a
   substring or `#` multi-level wildcard pattern).
   Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`).
-  Results are the same JSON shapes as REST/CLI.
+  Mutation results use these JSON shapes: `add` returns
+  `{"added":{"topic":"...","id":"..."}}`; `modify` returns
+  `{"modified":{"topic":"...","id":"..."}}`; `delete` returns
+  `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `downgrade`
+  return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`;
+  and `clear` returns
+  `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where
+  `num_of_topics` counts unique topics.
 - Error mapping (actual): `InvalidInput`/`InvalidFtsSyntax` →
   `invalid_params`; `NotFound` → `resource_not_found`;
   `EmbeddingUnavailable` → `internal_error` with a `503`-equivalent

@@ -28,8 +28,8 @@
   `inactive`/`forgotten` records to `active` with a fresh `updated_at`
   before calling it (on `modify`/`promote`/`downgrade`).
   `soft_delete()`/`clear()` set `state='deleted'` + fresh `updated_at` +
-  retention start. `clear` skips already-deleted rows and returns the
-  touched count.
+  retention start. `clear` skips already-deleted rows and returns the number
+  of newly touched items plus the number of unique topics containing them.
 - Lifecycle (`reconcile_before_op`, single `BEGIN IMMEDIATE` transaction):
   reconcile before every op (strict `>`: `>60d`→inactive within the
   forget window, `>120d`→forgotten + retention start via `COALESCE` —

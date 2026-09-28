@@ -64,6 +64,13 @@ impl McpClient {
     }
 }
 
+fn tool_json(response: &Value) -> Value {
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("MCP tool result must contain JSON text");
+    serde_json::from_str(text).expect("MCP tool result text must be JSON")
+}
+
 async fn spawn_client() -> McpClient {
     let dir = tempfile::tempdir().unwrap();
     let listener =
@@ -186,11 +193,92 @@ async fn add_then_search_via_tools() {
         )
         .await;
     assert!(added.get("result").is_some(), "add failed: {added}");
+    let added_json = tool_json(&added);
+    assert_eq!(added_json["added"]["topic"], "mcp");
     let found = mcp
         .call("search", serde_json::json!({"topic": "mcp"}))
         .await;
     let text = serde_json::to_string(&found["result"]).unwrap();
     assert!(text.contains("mcp"), "search should find record: {found}");
+}
+
+#[tokio::test]
+async fn mutation_tools_return_enveloped_results() {
+    let mut mcp = spawn_client().await;
+    let added = tool_json(
+        &mcp.call(
+            "add",
+            serde_json::json!({"topic":"mcp","when":"w","if":"i","do":"d","check":"c"}),
+        )
+        .await,
+    );
+    let id = added["added"]["id"].as_str().unwrap().to_string();
+    assert_eq!(added["added"]["topic"], "mcp");
+
+    let modified = tool_json(
+        &mcp.call(
+            "modify",
+            serde_json::json!({"topic":"mcp","id":id,"when":"updated"}),
+        )
+        .await,
+    );
+    assert_eq!(
+        modified,
+        serde_json::json!({"modified": {"topic": "mcp", "id": id}})
+    );
+
+    let promoted = tool_json(
+        &mcp.call("promote", serde_json::json!({"topic":"mcp","id":id}))
+            .await,
+    );
+    assert_eq!(
+        promoted,
+        serde_json::json!({
+            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 0}
+        })
+    );
+
+    let downgraded = tool_json(
+        &mcp.call("downgrade", serde_json::json!({"topic":"mcp","id":id}))
+            .await,
+    );
+    assert_eq!(
+        downgraded,
+        serde_json::json!({
+            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 1}
+        })
+    );
+
+    let deleted = tool_json(
+        &mcp.call("delete", serde_json::json!({"topic":"mcp","id":id}))
+            .await,
+    );
+    assert_eq!(
+        deleted,
+        serde_json::json!({"deleted": {"topic": "mcp", "id": id}})
+    );
+
+    for topic in ["clear-a", "clear-a", "clear-b"] {
+        let result = tool_json(
+            &mcp.call(
+                "add",
+                serde_json::json!({"topic":topic,"when":"w","if":"i","do":"d","check":"c"}),
+            )
+            .await,
+        );
+        assert_eq!(result["added"]["topic"], topic);
+    }
+
+    let cleared = tool_json(
+        &mcp.call("clear", serde_json::json!({"all":true,"confirm":true}))
+            .await,
+    );
+    assert_eq!(
+        cleared,
+        serde_json::json!({
+            "cleared": {"num_of_topics": 2, "num_of_items": 3}
+        })
+    );
 }
 
 #[tokio::test]

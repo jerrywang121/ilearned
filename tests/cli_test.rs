@@ -48,8 +48,8 @@ fn add_search_json_roundtrip() {
         String::from_utf8_lossy(&out.stderr)
     );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["topic"], "rust");
-    assert!(v["id"].as_str().is_some());
+    assert_eq!(v["added"]["topic"], "rust");
+    assert!(v["added"]["id"].as_str().is_some());
 
     let out = Command::new(bin())
         .args(["--config-file", &db, "search", "--json", "--topic", "rust"])
@@ -151,7 +151,7 @@ fn destructive_requires_confirmation() {
         .unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let id = v["id"].as_str().unwrap().to_string();
+    let id = v["added"]["id"].as_str().unwrap().to_string();
 
     // Answer "n" to the prompt: non-zero exit, record still present.
     let mut child = Command::new(bin())
@@ -307,9 +307,11 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         .unwrap();
     assert!(out.status.success());
     let added: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(added.as_object().unwrap().len(), 2);
-    assert_eq!(added["topic"], "t");
-    let id = added["id"].as_str().unwrap().to_string();
+    let id = added["added"]["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        added,
+        serde_json::json!({"added": {"topic": "t", "id": id}})
+    );
 
     let out = Command::new(bin())
         .args([
@@ -328,7 +330,10 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         .unwrap();
     assert!(out.status.success());
     let modified: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(modified, serde_json::json!({"topic": "t", "id": id}));
+    assert_eq!(
+        modified,
+        serde_json::json!({"modified": {"topic": "t", "id": id}})
+    );
 
     let out = Command::new(bin())
         .args([
@@ -347,7 +352,9 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
     let promoted: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         promoted,
-        serde_json::json!({"topic": "t", "id": id, "good_count": 2, "bad_count": 0})
+        serde_json::json!({
+            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 0}
+        })
     );
 
     let out = Command::new(bin())
@@ -367,7 +374,9 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
     let downgraded: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         downgraded,
-        serde_json::json!({"topic": "t", "id": id, "good_count": 2, "bad_count": 1})
+        serde_json::json!({
+            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 1}
+        })
     );
 
     let out = Command::new(bin())
@@ -386,7 +395,10 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         .unwrap();
     assert!(out.status.success());
     let deleted: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(deleted, serde_json::json!({"topic": "t", "id": id}));
+    assert_eq!(
+        deleted,
+        serde_json::json!({"deleted": {"topic": "t", "id": id}})
+    );
 }
 
 #[test]
@@ -459,7 +471,10 @@ fn clear_json_reports_removed_topics_and_items() {
         .unwrap();
     assert!(out.status.success());
     let cleared: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(cleared, serde_json::json!({"topics": 1, "items": 2}));
+    assert_eq!(
+        cleared,
+        serde_json::json!({"cleared": {"num_of_topics": 1, "num_of_items": 2}})
+    );
 }
 
 #[test]

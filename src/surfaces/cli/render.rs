@@ -34,7 +34,7 @@ pub fn render_experience(e: &Experience, json: bool) -> String {
 
 pub fn render_identity(topic: &str, id: &str, json: bool, action: &str) -> String {
     if json {
-        serde_json::json!({"topic": topic, "id": id}).to_string()
+        serde_json::json!({action: {"topic": topic, "id": id}}).to_string()
     } else {
         format!("{action} ({topic}/{id})")
     }
@@ -43,10 +43,12 @@ pub fn render_identity(topic: &str, id: &str, json: bool, action: &str) -> Strin
 pub fn render_feedback(e: &Experience, json: bool, action: &str) -> String {
     if json {
         serde_json::json!({
-            "topic": e.topic,
-            "id": e.id,
-            "good_count": e.good_count,
-            "bad_count": e.bad_count,
+            "modified": {
+                "topic": e.topic,
+                "id": e.id,
+                "good_count": e.good_count,
+                "bad_count": e.bad_count,
+            }
         })
         .to_string()
     } else {
@@ -59,7 +61,13 @@ pub fn render_feedback(e: &Experience, json: bool, action: &str) -> String {
 
 pub fn render_clear(summary: ClearSummary, json: bool) -> String {
     if json {
-        serde_json::json!({"topics": summary.topics, "items": summary.items}).to_string()
+        serde_json::json!({
+            "cleared": {
+                "num_of_topics": summary.topics,
+                "num_of_items": summary.items,
+            }
+        })
+        .to_string()
     } else {
         format!(
             "cleared {} topic(s), {} experience(s)",

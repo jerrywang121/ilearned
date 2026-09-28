@@ -9,9 +9,11 @@
 | `DELETE` | `/api/v1/experiences/:topic/:id` | Delete one: never-existing id → 404; already-deleted → idempotent 204 | 204, no body |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | Positive feedback (`good_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
 | `POST` | `/api/v1/experiences/:topic/:id/downgrade` | Negative feedback (`bad_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
-| `DELETE` | `/api/v1/experiences` | Clear by topic or all; requires `?confirm=true` plus exactly one of `?topic=X` / `?all=true` | 200 `{"cleared": N}` |
+| `DELETE` | `/api/v1/experiences` | Clear by topic or all; requires `?confirm=true` plus exactly one of `?topic=X` / `?all=true` | 200 `{"cleared":{"num_of_topics":N,"num_of_items":M}}` |
 | `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`); no `q` = list, with `q` = search | 200 array of strings |
 
+- Clear responses report `num_of_items` newly transitioned to `deleted` and
+  `num_of_topics` as the number of unique topics represented by those items.
 - Bodies/query use public field names (`when,if,do,check`); timestamps
   RFC 3339. Add example:
   `{"topic":"rust","when":"...","if":"...","do":"...","check":"..."}`

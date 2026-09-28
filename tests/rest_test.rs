@@ -199,6 +199,39 @@ async fn pagination_clamped() {
 }
 
 #[tokio::test]
+async fn clear_returns_unique_topic_and_item_counts() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for topic in ["clear-a", "clear-a", "clear-b"] {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic":topic,"when":"w","if":"i","do":"d","check":"c"}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+
+    let cleared: Value = client
+        .delete(srv.url("/api/v1/experiences?all=true&confirm=true"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        cleared,
+        serde_json::json!({
+            "cleared": {"num_of_topics": 2, "num_of_items": 3}
+        })
+    );
+}
+
+#[tokio::test]
 async fn topics_list_search_and_level_zero() {
     let srv = spawn_server().await;
     let client = reqwest::Client::new();

@@ -201,7 +201,7 @@ pub async fn downgrade<R: ExperienceRepo + VectorStore>(
 }
 
 /// Clear by topic or all (destructive): requires `?confirm=true` plus exactly
-/// one of `?topic=X` / `?all=true`. Returns 200 `{"cleared": N}`.
+/// one of `?topic=X` / `?all=true`. Returns unique topic and item counts.
 pub async fn clear<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<ClearParams>,
@@ -220,7 +220,12 @@ pub async fn clear<R: ExperienceRepo + VectorStore>(
         }
     };
     let summary = svc.clear(&cmd)?;
-    Ok(Json(serde_json::json!({"cleared": summary.items})))
+    Ok(Json(serde_json::json!({
+        "cleared": {
+            "num_of_topics": summary.topics,
+            "num_of_items": summary.items,
+        }
+    })))
 }
 
 /// List/search distinct topics. Query params: `level` truncates hierarchy
