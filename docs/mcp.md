@@ -1,6 +1,6 @@
 # MCP
 
-- Transports (same 7 tools on both):
+- Transports (same 9 tools on both):
   - Streamable HTTP at `/mcp` (same listener as REST/web), via `rmcp`
     `StreamableHttpService` with a local session manager. Full handshake
     required: `initialize` → `notifications/initialized`
@@ -21,14 +21,18 @@
   ```
   Run with the project dir as cwd for the default local store, or pass
   `--db <path>` / `ILEARNED_DB` for an explicit location.
-- Tools (7): `search`, `add`, `modify`, `delete`, `promote`, `downgrade`,
-  `clear`. Argument schemas mirror the domain commands exactly:
+- Tools (9): `search`, `add`, `modify`, `delete`, `promote`, `downgrade`,
+  `clear`, `topics_list`, `topics_search`. Argument schemas mirror the domain commands exactly:
   `search{topic?,text?,semantic?,limit?,offset?,deep?}`,
   `add{topic,when,if,do,check}` (`if`/`do` are serde-renamed `if_text`/
   `do_text` fields), `modify{topic,id,when?,if?,do?,check?}`,
   `delete/promote/downgrade{topic,id}`, `clear{topic?,all?,confirm}`
   (destructive `clear` requires `confirm: true` plus exactly one of
-  `topic`/`all=true`, else `invalid_params`).
+  `topic`/`all=true`, else `invalid_params`),
+  `topics_list{level?,limit?,offset?,deep?}`,
+  `topics_search{query,level?,limit?,offset?,deep?}` (`query` is a
+  substring or `#` multi-level wildcard pattern).
+  Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`).
   Results are the same JSON shapes as REST/CLI.
 - Error mapping (actual): `InvalidInput`/`InvalidFtsSyntax` →
   `invalid_params`; `NotFound` → `resource_not_found`;

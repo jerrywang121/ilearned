@@ -74,6 +74,8 @@ ilearned [--db PATH] [--bind ADDR] [--json] [--active-days N]
 ilearned add --topic TOPIC --when TEXT --if TEXT --do TEXT --check TEXT
 ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
                  [--limit N] [--offset N] [--deep]
+ilearned topic list [--level N] [--limit N] [--offset N] [--deep]
+ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep]
 ilearned modify --topic TOPIC --id ID [--when TEXT] [--if TEXT]
                  [--do TEXT] [--check TEXT]
 ilearned delete --topic TOPIC --id ID [--yes]
@@ -87,6 +89,7 @@ ilearned mcp
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
+- Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth, `--limit/--offset/--deep` paginate).
 - `modify` needs at least one non-blank field (blank-only values are ignored).
 - Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
@@ -103,6 +106,7 @@ Full reference: [docs/cli.md](docs/cli.md).
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | `good_count + 1` |
 | `POST` | `/api/v1/experiences/:topic/:id/downgrade` | `bad_count + 1` |
 | `DELETE` | `/api/v1/experiences?topic=X&confirm=true` | Clear topic/all (exactly one of `topic` / `all=true`) |
+| `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`) |
 
 Errors are `{"error": "..."}` with `400` validation · `404` missing · `503` embedding-unavailable · `500` internal. Pagination defaults `limit=20 offset=0`, clamped to `MAX_LIMIT=100`.
 
@@ -110,11 +114,11 @@ Full reference: [docs/rest-api.md](docs/rest-api.md).
 
 ### Web UI
 
-Server-rendered HTML, no JavaScript: search/browse at `/`, record detail, add/edit forms, promote/downgrade/delete actions, and a clear flow. Destructive posts require `confirm=yes`; all output is HTML-escaped. See [docs/web-server.md](docs/web-server.md).
+Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at `/topics`, record detail, add/edit forms, promote/downgrade/delete actions, and a clear flow. Destructive posts require `confirm=yes`; all output is HTML-escaped. See [docs/web-server.md](docs/web-server.md).
 
 ### MCP
 
-Streamable HTTP at `/mcp` with seven tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`). Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
+Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
 
 For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout), defaulting to a project-local `./.ilearned/ilearned.db` when `--db`/`ILEARNED_DB` are unset:
 
