@@ -115,7 +115,9 @@ fn stdio_lists_seven_tools() {
             "downgrade",
             "modify",
             "promote",
-            "search"
+            "search",
+            "topics_list",
+            "topics_search"
         ]
     );
     c.shutdown();
@@ -157,4 +159,42 @@ fn stdio_defaults_db_to_dot_ilearned_dir() {
         dir.path().join(".ilearned").join("ilearned.db").exists(),
         "./.ilearned/ilearned.db must be created under the project dir"
     );
+}
+
+#[test]
+fn stdio_topics_list_and_search() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("t.db").to_string_lossy().to_string();
+    let mut c = StdioChild::spawn(&["--db", &db, "mcp"], dir.path());
+    handshake(&mut c);
+    let added = c.request(
+        "tools/call",
+        serde_json::json!({"name":"add","arguments":{"topic":"travel/hotel/checkout","when":"w","if":"i","do":"d","check":"c"}}),
+    );
+    assert!(added.get("result").is_some(), "add must succeed: {added}");
+    // topics_list returns the full topic.
+    let listed = c.request(
+        "tools/call",
+        serde_json::json!({"name":"topics_list","arguments":{}}),
+    );
+    let text = serde_json::to_string(&listed["result"]).unwrap();
+    assert!(text.contains("travel/hotel/checkout"), "list: {listed}");
+    // topics_search with a # pattern returns it too.
+    let found = c.request(
+        "tools/call",
+        serde_json::json!({"name":"topics_search","arguments":{"query":"travel/#"}}),
+    );
+    let text = serde_json::to_string(&found["result"]).unwrap();
+    assert!(text.contains("travel/hotel/checkout"), "search: {found}");
+    // topics_search without query => error result (isError).
+    let missing = c.request(
+        "tools/call",
+        serde_json::json!({"name":"topics_search","arguments":{}}),
+    );
+    let text = serde_json::to_string(&missing).unwrap();
+    assert!(
+        text.contains("isError") || missing.get("error").is_some(),
+        "missing query must error: {missing}"
+    );
+    c.shutdown();
 }
