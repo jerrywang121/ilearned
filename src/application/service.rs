@@ -6,10 +6,13 @@ use uuid::Uuid;
 
 use crate::application::ranking::{cosine, rrf_fuse, RRF_K};
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
+    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::domain::experience::{Experience, State};
 use crate::domain::lifecycle::LifecycleConfig;
+use crate::domain::topics::{
+    topic_matches, truncate_topic, validate_topic, validate_topic_pattern,
+};
 use crate::embedding::provider::{DynProvider, EmbeddingProvider};
 use crate::error::AppError;
 use crate::storage::embeddings::VectorStore;
@@ -264,14 +267,16 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     }
 
     pub fn clear(&self, cmd: &ClearCommand) -> Result<u64, AppError> {
+        // Destructive path stays exact-match: `#` is pattern-only, never a target.
+        if let ClearCommand::Topic(t) = cmd {
+            validate_topic(t)?;
+        }
         self.reconcile()?;
         self.repo.clear(cmd, Utc::now())
     }
 
     fn validate_import(e: &Experience) -> Result<(), AppError> {
-        if e.topic.trim().is_empty() {
-            return Err(AppError::InvalidInput("topic is required".to_string()));
-        }
+        validate_topic(&e.topic)?;
         if e.id.trim().is_empty() {
             return Err(AppError::InvalidInput("id is required".to_string()));
         }
@@ -292,13 +297,15 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
 
     /// Dump experiences as JSONL-ready records. Reconcile-first, same
     /// visibility filter as search (deleted/forgotten always hidden,
-    /// inactive only with `deep`).
+    /// inactive only with `deep`). The topic filter accepts `#` wildcards.
     pub fn export(&self, topic: Option<&str>, deep: bool) -> Result<Vec<Experience>, AppError> {
         self.reconcile()?;
+        let (sql_topic, wildcard) = Self::resolve_topic_filter(topic)?;
         Ok(self
             .repo
-            .browse(topic, deep)?
+            .browse(sql_topic.as_deref(), deep)?
             .into_iter()
+            .filter(|e| wildcard.as_deref().is_none_or(|p| topic_matches(p, &e.topic)))
             .filter_map(|e| self.visible(e, deep))
             .collect())
     }
@@ -381,11 +388,33 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         out[offset..].to_vec()
     }
 
+    /// Resolve a `search`/`export` topic filter: validate as a pattern and
+    /// split it into an exact SQL topic plus an optional wildcard pattern.
+    /// Returns `(sql_topic, wildcard)`: exact patterns keep the fast
+    /// `topic=?` path; `#` patterns fetch the superset and filter in Rust.
+    fn resolve_topic_filter(topic: Option<&str>) -> Result<(Option<String>, Option<String>), AppError> {
+        match topic {
+            None => Ok((None, None)),
+            Some(t) => {
+                validate_topic_pattern(t)?;
+                if t.split('/').any(|s| s == "#") {
+                    Ok((None, Some(t.to_string())))
+                } else {
+                    Ok((Some(t.to_string()), None))
+                }
+            }
+        }
+    }
+
     /// Semantic-only search: cosine over stored vectors of eligible records.
+    /// `sql_topic` is the exact SQL filter (None when a `#` wildcard
+    /// applies); `wildcard` is the Rust-side pattern filter.
     fn search_semantic(
         &self,
         query_text: &str,
         q: &SearchQuery,
+        sql_topic: Option<&str>,
+        wildcard: Option<&str>,
     ) -> Result<Vec<Experience>, AppError> {
         let provider = self.embedding.clone().ok_or_else(|| {
             AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
@@ -393,13 +422,16 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         // Embed failure => typed error, never a silent text fallback.
         let qv = self.block_embed(query_text)?;
         let model = provider.model_id().to_string();
-        let stored = self.repo.load_vectors(q.topic.as_deref(), &model)?;
+        let stored = self.repo.load_vectors(sql_topic, &model)?;
         let ids: HashSet<(String, String)> = stored
             .iter()
             .map(|(t, i, _)| (t.clone(), i.clone()))
             .collect();
         let mut scored: Vec<(Experience, f32)> = Vec::new();
         for (t, i) in ids {
+            if wildcard.is_some_and(|p| !topic_matches(p, &t)) {
+                continue;
+            }
             if let Some(e) = self.repo.get(&t, &i)? {
                 if self.visible(e.clone(), q.deep).is_none() {
                     continue;
@@ -424,14 +456,20 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
 
     pub fn search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
         self.reconcile()?;
+        let (sql_topic, wildcard) = Self::resolve_topic_filter(q.topic.as_deref())?;
+        let wildcard = wildcard.as_deref();
+        let matches_wildcard = |e: &Experience| {
+            wildcard.is_none_or(|p| topic_matches(p, &e.topic))
+        };
         let text = q.text.as_deref().filter(|t| !t.trim().is_empty());
         let semantic = q.semantic.as_deref().filter(|s| !s.trim().is_empty());
         match (text, semantic) {
             (None, None) => {
                 let out: Vec<Experience> = self
                     .repo
-                    .browse(q.topic.as_deref(), q.deep)?
+                    .browse(sql_topic.as_deref(), q.deep)?
                     .into_iter()
+                    .filter(|e| matches_wildcard(e))
                     .filter_map(|e| self.visible(e, q.deep))
                     .collect();
                 Ok(self.paginate(out, q))
@@ -439,24 +477,26 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             (Some(t), None) => {
                 let out: Vec<Experience> = self
                     .repo
-                    .search_fts(t, q.topic.as_deref(), q.deep)?
+                    .search_fts(t, sql_topic.as_deref(), q.deep)?
                     .into_iter()
                     .map(|(e, _)| e)
+                    .filter(|e| matches_wildcard(e))
                     .filter_map(|e| self.visible(e, q.deep))
                     .collect();
                 Ok(self.paginate(out, q))
             }
             (None, Some(s)) => {
-                let out = self.search_semantic(s, q)?;
+                let out = self.search_semantic(s, q, sql_topic.as_deref(), wildcard)?;
                 Ok(self.paginate(out, q))
             }
             (Some(t), Some(s)) => {
                 // Combined: both rankings must succeed; embed failure is a
                 // typed error, never a silent downgrade to text-only.
-                let text_hits = self.repo.search_fts(t, q.topic.as_deref(), q.deep)?;
-                let sem_hits = self.search_semantic(s, q)?;
+                let text_hits = self.repo.search_fts(t, sql_topic.as_deref(), q.deep)?;
+                let sem_hits = self.search_semantic(s, q, sql_topic.as_deref(), wildcard)?;
                 let text_keys: Vec<(String, String)> = text_hits
                     .iter()
+                    .filter(|(e, _)| matches_wildcard(e))
                     .map(|(e, _)| (e.topic.clone(), e.id.clone()))
                     .collect();
                 let sem_keys: Vec<(String, String)> = sem_hits
@@ -466,7 +506,9 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                 let fused = rrf_fuse(&text_keys, &sem_keys, RRF_K);
                 let mut by_key: HashMap<(String, String), Experience> = HashMap::new();
                 for (e, _) in text_hits {
-                    by_key.entry((e.topic.clone(), e.id.clone())).or_insert(e);
+                    if matches_wildcard(&e) {
+                        by_key.entry((e.topic.clone(), e.id.clone())).or_insert(e);
+                    }
                 }
                 for e in sem_hits {
                     by_key.entry((e.topic.clone(), e.id.clone())).or_insert(e);
@@ -486,5 +528,48 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                 Ok(self.paginate(ordered.into_iter().map(|(e, _)| e).collect(), q))
             }
         }
+    }
+
+    /// List/search distinct topics. Reconcile-first; visibility follows
+    /// search (deleted/forgotten never contribute, inactive only with
+    /// `deep`). `query` is a substring or `#` pattern matched against the
+    /// full topic; `level` truncates after matching, then dedups.
+    pub fn list_topics(&self, q: &TopicQuery) -> Result<Vec<String>, AppError> {
+        if q.level == Some(0) {
+            return Err(AppError::InvalidInput(
+                "level must be >= 1".to_string(),
+            ));
+        }
+        self.reconcile()?;
+        let base = self.repo.distinct_topics(q.deep)?;
+        let query = q.query.clone().filter(|s| !s.trim().is_empty());
+        let mut out: Vec<String> = Vec::new();
+        for t in base {
+            if let Some(ref pat) = query {
+                if pat.split('/').any(|s| s == "#") {
+                    validate_topic_pattern(pat)?;
+                    if !topic_matches(pat, &t) {
+                        continue;
+                    }
+                } else if !t.contains(pat.as_str()) {
+                    continue;
+                }
+            }
+            let shown = match q.level {
+                Some(n) => truncate_topic(&t, n),
+                None => t,
+            };
+            if !out.contains(&shown) {
+                out.push(shown);
+            }
+        }
+        out.sort();
+        let limit = (q.limit.min(MAX_LIMIT)) as usize;
+        let offset = q.offset as usize;
+        if offset >= out.len() || limit == 0 {
+            return Ok(vec![]);
+        }
+        out.truncate(offset + limit);
+        Ok(out[offset..].to_vec())
     }
 }

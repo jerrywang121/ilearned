@@ -1,3 +1,4 @@
+use crate::domain::topics::validate_topic;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -11,9 +12,7 @@ pub struct AddCommand {
 
 impl AddCommand {
     pub fn validate(&self) -> Result<(), AppError> {
-        if self.topic.trim().is_empty() {
-            return Err(AppError::InvalidInput("topic is required".to_string()));
-        }
+        validate_topic(&self.topic)?;
         if self.when_text.trim().is_empty() {
             return Err(AppError::InvalidInput("when is required".to_string()));
         }

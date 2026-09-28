@@ -68,6 +68,10 @@ pub trait ExperienceRepo: Send + Sync {
         topic: Option<&str>,
         deep: bool,
     ) -> Result<Vec<(Experience, f32)>, AppError>;
+    /// Distinct topics honoring visibility: only topics with >=1
+    /// active record (deep=false), or >=1 active/inactive record
+    /// (deep=true). Sorted ascending. `deleted`/`forgotten` never contribute.
+    fn distinct_topics(&self, deep: bool) -> Result<Vec<String>, AppError>;
     /// Paginated browse ordered by updated_at DESC (service applies limit/offset).
     fn browse(&self, topic: Option<&str>, deep: bool) -> Result<Vec<Experience>, AppError>;
     /// Run lifecycle reconcile + purge (implemented via storage::lifecycle).
@@ -267,6 +271,22 @@ impl ExperienceRepo for SqliteRepo {
             .into_iter()
             .filter(|e| is_eligible(&e.state, deep))
             .collect())
+    }
+
+    fn distinct_topics(&self, deep: bool) -> Result<Vec<String>, AppError> {
+        let db = self.db.lock().expect("db lock");
+        let sql = if deep {
+            "SELECT DISTINCT topic FROM experiences
+             WHERE state IN ('active','inactive') ORDER BY topic ASC"
+        } else {
+            "SELECT DISTINCT topic FROM experiences
+             WHERE state = 'active' ORDER BY topic ASC"
+        };
+        let mut stmt = db.prepare(sql)?;
+        let out: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(out)
     }
 }
 
