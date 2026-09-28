@@ -80,12 +80,15 @@ ilearned delete --topic TOPIC --id ID [--yes]
 ilearned promote --topic TOPIC --id ID
 ilearned downgrade --topic TOPIC --id ID
 ilearned clear (--topic TOPIC | --all) [--yes]
+ilearned export [--topic TOPIC] [--deep] [--file PATH]
+ilearned import [--file PATH] [--merge]
 ilearned serve [--bind ADDR]
 ilearned mcp
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
 - `modify` needs at least one non-blank field (blank-only values are ignored).
+- Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
 
 Full reference: [docs/cli.md](docs/cli.md).
@@ -196,7 +199,8 @@ Tracked as follow-ups in [docs/TODO.md](docs/TODO.md):
 
 - Documented maximum search limit tuning (`MAX_LIMIT`)
 - Embedding model/dimension migration path
-- Backup/export story for the local SQLite file
+- Portable JSONL `export`/`import` round-trip (done; file-copy backup
+  out of scope)
 
 ## License
 

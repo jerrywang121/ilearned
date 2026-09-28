@@ -26,4 +26,7 @@ Ordered implementation milestones (see `docs/superpowers/plans/2026-09-27-initia
 
 - Documented maximum search limit tuning (`MAX_LIMIT`).
 - Embedding model/dimension migration path.
-- Backup/export story for the local SQLite file.
+- ~~Backup/export story for the local SQLite file.~~ Done: portable
+  JSONL `export`/`import` round-trip (`--file`, `--topic`/`--deep`,
+  `--merge`, new/updated/errors report). SQLite file-copy backup
+  remains out of scope.

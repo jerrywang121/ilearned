@@ -91,7 +91,13 @@ fn main() {
                 }
             });
         }
-        cmd => {
+        cmd @ (Commands::Add(_)
+        | Commands::Search(_)
+        | Commands::Modify(_)
+        | Commands::Delete(_)
+        | Commands::Promote(_)
+        | Commands::Downgrade(_)
+        | Commands::Clear(_)) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
                 eprintln!("{}", render_error(&e, cli.json));
                 std::process::exit(exit_code(&e));
@@ -106,6 +112,126 @@ fn main() {
                     std::process::exit(exit_code(&e));
                 }
             }
+        }
+        Commands::Export(a) => {
+            let svc = build_service(&cfg).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            let out = svc.export(a.topic.as_deref(), a.deep).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            let mut body = String::new();
+            for e in &out {
+                match serde_json::to_string(e) {
+                    Ok(line) => {
+                        body.push_str(&line);
+                        body.push('\n');
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}",
+                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                        );
+                        std::process::exit(4);
+                    }
+                }
+            }
+            match &a.file {
+                Some(path) => {
+                    if let Some(parent) = path.parent() {
+                        if !parent.as_os_str().is_empty() {
+                            let mk = std::fs::create_dir_all(parent);
+                            if let Err(e) = mk {
+                                eprintln!(
+                                    "{}",
+                                    render_error(
+                                        &ilearned::AppError::Internal(e.to_string()),
+                                        cli.json
+                                    )
+                                );
+                                std::process::exit(4);
+                            }
+                        }
+                    }
+                    if let Err(e) = std::fs::write(path, &body) {
+                        eprintln!(
+                            "{}",
+                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                        );
+                        std::process::exit(4);
+                    }
+                    let msg = if cli.json {
+                        serde_json::json!({"exported": out.len()}).to_string()
+                    } else {
+                        format!("exported {} experience(s)", out.len())
+                    };
+                    println!("{msg}");
+                }
+                None => print!("{body}"),
+            }
+            std::process::exit(0);
+        }
+        Commands::Import(a) => {
+            let svc = build_service(&cfg).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            let text = match &a.file {
+                Some(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
+                    eprintln!(
+                        "{}",
+                        render_error(&ilearned::AppError::Storage(e.to_string()), cli.json)
+                    );
+                    std::process::exit(4);
+                }),
+                None => {
+                    use std::io::Read as _;
+                    let mut buf = String::new();
+                    if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+                        eprintln!(
+                            "{}",
+                            render_error(&ilearned::AppError::Internal(e.to_string()), cli.json)
+                        );
+                        std::process::exit(4);
+                    }
+                    buf
+                }
+            };
+            let summary = svc.import_jsonl(&text, a.merge).unwrap_or_else(|e| {
+                eprintln!("{}", render_error(&e, cli.json));
+                std::process::exit(exit_code(&e));
+            });
+            for err in &summary.errors {
+                eprintln!(
+                    "{}",
+                    render_error(
+                        &ilearned::AppError::InvalidInput(format!(
+                            "line {}: {}",
+                            err.line, err.message
+                        )),
+                        cli.json
+                    )
+                );
+            }
+            let msg = if cli.json {
+                serde_json::json!({
+                    "new": summary.new,
+                    "updated": summary.updated,
+                    "errors": summary.errors.len(),
+                })
+                .to_string()
+            } else {
+                format!(
+                    "imported {} new, {} updated, {} error(s)",
+                    summary.new,
+                    summary.updated,
+                    summary.errors.len()
+                )
+            };
+            println!("{msg}");
+            std::process::exit(if summary.errors.is_empty() { 0 } else { 2 });
         }
     }
 }

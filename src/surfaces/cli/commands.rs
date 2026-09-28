@@ -62,6 +62,10 @@ pub enum Commands {
     Downgrade(IdArgs),
     /// Clear experiences by topic or all (destructive, needs confirmation).
     Clear(ClearArgs),
+    /// Export experiences as JSONL (stdout, or --file PATH).
+    Export(ExportArgs),
+    /// Import experiences from JSONL (--file PATH or stdin).
+    Import(ImportArgs),
     /// Start REST + web + MCP on one listener.
     Serve(ServeArgs),
     /// Run as an MCP server over stdio (stdin/stdout) for harness use.
@@ -174,4 +178,28 @@ pub struct ServeArgs {
     /// Bind address override (default from config).
     #[arg(long)]
     pub bind: Option<SocketAddr>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ExportArgs {
+    /// Filter by topic.
+    #[arg(long)]
+    pub topic: Option<String>,
+    /// Include inactive records (deleted/forgotten always excluded).
+    #[arg(long)]
+    pub deep: bool,
+    /// Write to PATH instead of stdout (parent dirs created, overwritten).
+    #[arg(long)]
+    pub file: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ImportArgs {
+    /// Read from PATH instead of stdin.
+    #[arg(long)]
+    pub file: Option<PathBuf>,
+    /// Keep file ids and overwrite on (topic, id) collision.
+    /// Without --merge every line gets a fresh id.
+    #[arg(long)]
+    pub merge: bool,
 }

@@ -17,6 +17,29 @@ use crate::storage::repository::ExperienceRepo;
 
 pub const MAX_LIMIT: u32 = 100;
 
+/// Outcome of importing one validated record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportOutcome {
+    New,
+    Updated,
+}
+
+/// One skipped line during bulk import.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportError {
+    pub line: usize,
+    pub message: String,
+}
+
+/// Totals for a bulk import run. All lines are attempted; bad lines are
+/// collected in `errors` while good lines are still applied.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportSummary {
+    pub new: usize,
+    pub updated: usize,
+    pub errors: Vec<ImportError>,
+}
+
 /// The sole entry point for adapters. Owns lifecycle, ranking, transactions.
 pub struct MemoryService<R> {
     repo: R,
@@ -243,6 +266,109 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     pub fn clear(&self, cmd: &ClearCommand) -> Result<u64, AppError> {
         self.reconcile()?;
         self.repo.clear(cmd, Utc::now())
+    }
+
+    fn validate_import(e: &Experience) -> Result<(), AppError> {
+        if e.topic.trim().is_empty() {
+            return Err(AppError::InvalidInput("topic is required".to_string()));
+        }
+        if e.id.trim().is_empty() {
+            return Err(AppError::InvalidInput("id is required".to_string()));
+        }
+        if e.when_text.trim().is_empty() {
+            return Err(AppError::InvalidInput("when is required".to_string()));
+        }
+        if e.if_text.trim().is_empty() {
+            return Err(AppError::InvalidInput("if is required".to_string()));
+        }
+        if e.do_text.trim().is_empty() {
+            return Err(AppError::InvalidInput("do is required".to_string()));
+        }
+        if e.check_text.trim().is_empty() {
+            return Err(AppError::InvalidInput("check is required".to_string()));
+        }
+        Ok(())
+    }
+
+    /// Dump experiences as JSONL-ready records. Reconcile-first, same
+    /// visibility filter as search (deleted/forgotten always hidden,
+    /// inactive only with `deep`).
+    pub fn export(&self, topic: Option<&str>, deep: bool) -> Result<Vec<Experience>, AppError> {
+        self.reconcile()?;
+        Ok(self
+            .repo
+            .browse(topic, deep)?
+            .into_iter()
+            .filter_map(|e| self.visible(e, deep))
+            .collect())
+    }
+
+    /// Import one validated record. With `merge`, keeps `(topic, id)` and
+    /// overwrites on collision; otherwise assigns a fresh id.
+    pub fn import_record(&self, mut e: Experience, merge: bool) -> Result<ImportOutcome, AppError> {
+        Self::validate_import(&e)?;
+        self.reconcile()?;
+        if !merge {
+            e.id = Uuid::new_v4().to_string()[..8].to_string();
+        }
+        match self.repo.get(&e.topic, &e.id)? {
+            Some(_) => {
+                self.repo.update(&e)?;
+                self.best_effort_embed(&e);
+                Ok(ImportOutcome::Updated)
+            }
+            None => match self.repo.insert(&e) {
+                Ok(()) => {
+                    self.best_effort_embed(&e);
+                    Ok(ImportOutcome::New)
+                }
+                // UUID-8 collision on fresh ids: retry once. Any other
+                // storage error is real.
+                Err(AppError::Storage(m))
+                    if !merge
+                        && (m.contains("UNIQUE constraint failed")
+                            || m.contains("PRIMARY KEY")) =>
+                {
+                    e.id = Uuid::new_v4().to_string()[..8].to_string();
+                    self.repo.insert(&e)?;
+                    self.best_effort_embed(&e);
+                    Ok(ImportOutcome::New)
+                }
+                Err(e) => Err(e),
+            },
+        }
+    }
+
+    /// Bulk import: parse every JSONL line, apply the good ones, collect
+    /// per-line errors. Never aborts early — good lines commit even when
+    /// other lines fail.
+    pub fn import_jsonl(&self, text: &str, merge: bool) -> Result<ImportSummary, AppError> {
+        let mut summary = ImportSummary::default();
+        for (idx, line) in text.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let n = idx + 1;
+            let record: Experience = match serde_json::from_str(line) {
+                Ok(r) => r,
+                Err(e) => {
+                    summary.errors.push(ImportError {
+                        line: n,
+                        message: format!("invalid JSON: {e}"),
+                    });
+                    continue;
+                }
+            };
+            match self.import_record(record, merge) {
+                Ok(ImportOutcome::New) => summary.new += 1,
+                Ok(ImportOutcome::Updated) => summary.updated += 1,
+                Err(e) => summary.errors.push(ImportError {
+                    line: n,
+                    message: e.to_string(),
+                }),
+            }
+        }
+        Ok(summary)
     }
 
     fn paginate(&self, mut out: Vec<Experience>, q: &SearchQuery) -> Vec<Experience> {

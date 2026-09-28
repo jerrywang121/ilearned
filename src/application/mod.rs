@@ -1,4 +1,4 @@
 pub mod ranking;
 pub mod service;
 
-pub use service::{MemoryService, MAX_LIMIT};
+pub use service::{ImportError, ImportOutcome, ImportSummary, MemoryService, MAX_LIMIT};
