@@ -16,6 +16,8 @@ ilearned downgrade --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH] [--json]
 ilearned import [--file PATH] [--merge] [--json]
+ilearned config show
+ilearned config init [-g]
 ilearned serve [--bind ADDR] [--json]
 ilearned mcp [--json]
 ```
@@ -26,6 +28,18 @@ ilearned mcp [--json]
   override file values. `--json` is a per-command output option (for example,
   `search --json`), not a global option. REST, web, and MCP surfaces expose no
   configuration controls.
+- `config show` always prints JSON with the effective `db`, `bind`, lifecycle,
+  and embedding settings plus a `config_files` array containing the existing
+  global, local, and explicit `--config-file` paths used during resolution.
+  Embedding `api_key` values are never printed; the embedding object exposes
+  `api_key_configured` instead. It does not open the database, so it also works
+  before a database exists.
+  `config init` generates the default TOML directly from the executable at
+  `./.ilearned/config.toml`; `config init -g` uses the global config path
+  (`$XDG_CONFIG_HOME/ilearned/config.toml` or `~/.config/ilearned/config.toml`).
+  Parent directories are created, new files use owner-only permissions where
+  supported, but an existing target is never overwritten and the command fails
+  while reporting its path.
 - Topic form: hierarchical, e.g. `travel/hotel/checkout`; each `/`-separated
   segment must match `[a-z0-9_-]` (lowercase letters, digits, hyphen,
   underscore) — no empty segments, no uppercase, dots, or spaces. `#` is

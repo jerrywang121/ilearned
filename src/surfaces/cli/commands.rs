@@ -55,6 +55,8 @@ pub enum Commands {
     Export(ExportArgs),
     /// Import experiences from JSONL (--file PATH or stdin).
     Import(ImportArgs),
+    /// Inspect or initialize TOML configuration files.
+    Config(ConfigArgs),
     /// Start REST + web + MCP on one listener.
     Serve(ServeArgs),
     /// Run as an MCP server over stdio (stdin/stdout) for harness use.
@@ -76,6 +78,7 @@ impl Commands {
             },
             Self::Export(a) => a.output.json,
             Self::Import(a) => a.output.json,
+            Self::Config(a) => matches!(&a.command, ConfigCommands::Show),
             Self::Serve(a) => a.output.json,
             Self::Mcp(a) => a.output.json,
         }
@@ -234,6 +237,27 @@ pub struct ImportArgs {
     pub merge: bool,
     #[command(flatten)]
     pub output: JsonArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub command: ConfigCommands,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum ConfigCommands {
+    /// Show the resolved configuration and the files used to resolve it.
+    Show,
+    /// Create a default configuration file.
+    Init(ConfigInitArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ConfigInitArgs {
+    /// Write the global configuration instead of the project-local one.
+    #[arg(short = 'g', long = "global")]
+    pub global: bool,
 }
 
 #[derive(Debug, Clone, Args)]

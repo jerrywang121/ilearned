@@ -584,6 +584,213 @@ fn missing_cli_config_file_is_rejected() {
 }
 
 #[test]
+fn config_show_reports_resolved_values_and_existing_sources_without_a_database() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let global = dir.path().join("empty-xdg-config/ilearned/config.toml");
+    let local = dir.path().join(".ilearned/config.toml");
+    let explicit = dir.path().join("override.toml");
+    let local_db = dir.path().join("local.db");
+    let explicit_db = dir.path().join("explicit.db");
+    std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+    std::fs::write(&global, "forget_days = 22\n").unwrap();
+    std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+    std::fs::write(
+        &local,
+        format!(
+            "db = {:?}\nbind = \"127.0.0.1:9000\"\nactive_days = 10\n",
+            local_db.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &explicit,
+        format!(
+            "db = {:?}\nbind = \"127.0.0.1:9001\"\nactive_days = 11\n",
+            explicit_db.to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let out = isolated_command(dir.path())
+        .args([
+            "--config-file",
+            explicit.to_str().unwrap(),
+            "config",
+            "show",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        value["config"]["db"],
+        explicit_db.to_string_lossy().as_ref()
+    );
+    assert_eq!(value["config"]["bind"], "127.0.0.1:9001");
+    assert_eq!(value["config"]["active_days"], 11);
+    assert_eq!(value["config"]["forget_days"], 22);
+    let files = value["config_files"].as_array().unwrap();
+    assert!(
+        files.iter().any(|path| path.as_str() == global.to_str()),
+        "global config path missing from {files:?}"
+    );
+    assert!(
+        files.iter().any(|path| path
+            .as_str()
+            .is_some_and(|path| path.ends_with(".ilearned/config.toml"))),
+        "local config path missing from {files:?}"
+    );
+    assert!(
+        files.iter().any(|path| path.as_str() == explicit.to_str()),
+        "explicit config path missing from {files:?}"
+    );
+}
+
+#[test]
+fn config_show_works_before_any_database_or_config_file_exists() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let out = isolated_command(dir.path())
+        .args(["config", "show"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(value["config"]["db"].is_null());
+    assert_eq!(value["config"]["bind"], "127.0.0.1:8787");
+    assert_eq!(value["config"]["active_days"], 60);
+    assert!(value["config_files"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn config_show_does_not_print_embedding_api_keys() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = dir.path().join("embedding.toml");
+    std::fs::write(
+        &config,
+        r#"
+[embedding]
+endpoint = "http://localhost:11434/v1"
+model = "nomic-embed-text"
+api_key = "super-secret-value"
+"#,
+    )
+    .unwrap();
+
+    let out = isolated_command(dir.path())
+        .args(["--config-file", config.to_str().unwrap(), "config", "show"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("super-secret-value"), "stdout: {stdout}");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["config"]["embedding"]["api_key_configured"], true);
+    assert!(value["config"]["embedding"]["api_key"].is_null());
+}
+
+#[test]
+fn config_init_generates_local_defaults_without_packaged_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let target = dir.path().join(".ilearned/config.toml");
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = std::fs::read_to_string(&target).expect("local config should be created");
+    let parsed: FileConfig = toml::from_str(&text).expect("generated config should be valid TOML");
+    assert_eq!(parsed.bind.as_deref(), Some("127.0.0.1:8787"));
+    assert_eq!(parsed.active_days, Some(60));
+    assert_eq!(parsed.forget_days, Some(120));
+    assert_eq!(parsed.retention_days, Some(60));
+    assert!(text.contains("[embedding]"));
+}
+
+#[test]
+fn config_init_global_uses_xdg_config_path() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let global = dir.path().join("empty-xdg-config/ilearned/config.toml");
+    let out = isolated_command(dir.path())
+        .args(["config", "init", "-g"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        global.is_file(),
+        "global config missing at {}",
+        global.display()
+    );
+    let parsed: FileConfig = toml::from_str(&std::fs::read_to_string(global).unwrap()).unwrap();
+    assert_eq!(parsed.active_days, Some(60));
+}
+
+#[test]
+fn config_init_refuses_to_overwrite_and_reports_existing_path() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let target = dir.path().join(".ilearned/config.toml");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, "db = \"keep-me.db\"\n").unwrap();
+
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("./.ilearned/config.toml"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target).unwrap(),
+        "db = \"keep-me.db\"\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn config_init_creates_private_config_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mode = std::fs::metadata(dir.path().join(".ilearned/config.toml"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
+#[test]
 fn serve_bind_overrides_config_file_and_environment() {
     use std::net::{TcpListener, TcpStream};
     use std::time::Duration;

@@ -1,9 +1,12 @@
 use std::fmt::Display;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use crate::domain::lifecycle::LifecycleConfig;
 use crate::error::AppError;
@@ -260,6 +263,61 @@ impl FileConfig {
             .map(|home| PathBuf::from(home).join(".local/share/ilearned/ilearned.db"))
     }
 
+    /// Generate the default configuration directly from the executable.
+    ///
+    /// The database and provider credentials remain commented because their
+    /// values are installation-specific; the remaining settings document the
+    /// runtime defaults in a ready-to-edit TOML file.
+    pub fn default_config_toml() -> String {
+        format!(
+            "# ilearned configuration\n\n# Database path (optional).\n# db = \"./.ilearned/ilearned.db\"\n\nbind = \"127.0.0.1:8787\"\nactive_days = {}\nforget_days = {}\nretention_days = {}\n\n[embedding]\n# endpoint = \"http://localhost:11434/v1\"\n# model = \"nomic-embed-text\"\n# api_key = \"your-api-key\"\ndims = {}\ntimeout_secs = {}\n",
+            LifecycleConfig::default().active_period_days,
+            LifecycleConfig::default().forget_period_days,
+            LifecycleConfig::default().retention_days,
+            EmbeddingConfig::DEFAULT_DIMS,
+            EmbeddingConfig::DEFAULT_TIMEOUT_SECS,
+        )
+    }
+
+    /// Create a generated configuration file without overwriting an existing
+    /// file. The target's parent directory is created when necessary.
+    pub fn init(path: &Path) -> Result<(), AppError> {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::Storage(format!(
+                    "cannot create config directory {}: {e}",
+                    parent.display()
+                ))
+            })?;
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = match options.open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(AppError::InvalidInput(format!(
+                    "config file already exists: {}",
+                    path.display()
+                )))
+            }
+            Err(e) => {
+                return Err(AppError::Storage(format!(
+                    "cannot create config file {}: {e}",
+                    path.display()
+                )))
+            }
+        };
+        file.write_all(Self::default_config_toml().as_bytes())
+            .map_err(|e| {
+                AppError::Storage(format!("cannot write config file {}: {e}", path.display()))
+            })
+    }
+
     fn load_path(path: &Path) -> Result<Option<Self>, AppError> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
@@ -287,12 +345,32 @@ impl FileConfig {
     pub fn load_files_with_override(
         override_path: Option<&Path>,
     ) -> Result<Option<Self>, AppError> {
-        let global = Self::load_path(&Self::global_path())?;
-        let local = Self::load_path(&Self::local_path())?;
+        Self::load_files_with_sources(override_path).map(|(config, _)| config)
+    }
+
+    /// Load the default layers and return the paths that actually existed and
+    /// participated in resolution, in precedence order.
+    pub fn load_files_with_sources(
+        override_path: Option<&Path>,
+    ) -> Result<(Option<Self>, Vec<PathBuf>), AppError> {
+        let mut paths = Vec::new();
+        let global_path = Self::global_path();
+        let global = Self::load_path(&global_path)?;
+        if global.is_some() {
+            paths.push(global_path);
+        }
+        let local_path = Self::local_path();
+        let local = Self::load_path(&local_path)?;
+        if local.is_some() {
+            paths.push(local_path);
+        }
         let base = Self::merge(global, local);
         let override_config = match override_path {
             Some(path) => match Self::load_path(path)? {
-                Some(config) => Some(config),
+                Some(config) => {
+                    paths.push(path.to_path_buf());
+                    Some(config)
+                }
                 None => {
                     return Err(AppError::InvalidInput(format!(
                         "config file {} does not exist",
@@ -302,8 +380,160 @@ impl FileConfig {
             },
             None => None,
         };
-        Ok(Self::merge(base, override_config))
+        Ok((Self::merge(base, override_config), paths))
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedConfig {
+    pub db: Option<String>,
+    pub bind: String,
+    pub active_days: u64,
+    pub forget_days: u64,
+    pub retention_days: u64,
+    pub embedding: Option<ResolvedEmbeddingConfig>,
+}
+
+impl ResolvedConfig {
+    pub fn from_file(file: Option<FileConfig>) -> Result<Self, AppError> {
+        let db = resolve_database_path(None, file.as_ref())
+            .map(|path| path.to_string_lossy().into_owned());
+        let bind = resolve_bind(None, file.as_ref())?;
+        let lifecycle = resolve_lifecycle(None, None, None, file.as_ref())?;
+        let embedding = resolve_embedding_for_show(file.as_ref())?;
+        Ok(Self {
+            db,
+            bind: bind.to_string(),
+            active_days: lifecycle.active_period_days,
+            forget_days: lifecycle.forget_period_days,
+            retention_days: lifecycle.retention_days,
+            embedding,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedEmbeddingConfig {
+    pub endpoint: Option<String>,
+    pub model: Option<String>,
+    pub api_key_configured: bool,
+    pub dims: usize,
+    pub timeout_secs: u64,
+}
+
+fn resolve_embedding_for_show(
+    file: Option<&FileConfig>,
+) -> Result<Option<ResolvedEmbeddingConfig>, AppError> {
+    let file = file.and_then(|config| config.embedding.as_ref());
+    let dims = resolve_setting(None, "ILEARNED_EMBED_DIMS", file.and_then(|f| f.dims))?
+        .unwrap_or(EmbeddingConfig::DEFAULT_DIMS);
+    let timeout_secs = resolve_setting(
+        None,
+        "ILEARNED_EMBED_TIMEOUT_SECS",
+        file.and_then(|f| f.timeout_secs),
+    )?
+    .unwrap_or(EmbeddingConfig::DEFAULT_TIMEOUT_SECS);
+    let endpoint = resolve_string(
+        None,
+        "ILEARNED_EMBED_ENDPOINT",
+        file.and_then(|f| f.endpoint.clone()),
+    )?;
+    let model = resolve_string(
+        None,
+        "ILEARNED_EMBED_MODEL",
+        file.and_then(|f| f.model.clone()),
+    )?;
+    let api_key = resolve_string(
+        None,
+        "ILEARNED_EMBED_API_KEY",
+        file.and_then(|f| f.api_key.clone()),
+    )?;
+    if endpoint.is_none() && model.is_none() && api_key.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(ResolvedEmbeddingConfig {
+        endpoint,
+        model,
+        api_key_configured: api_key.is_some(),
+        dims,
+        timeout_secs,
+    }))
+}
+
+fn configured_database_path(
+    explicit: Option<PathBuf>,
+    file: Option<&FileConfig>,
+) -> Option<PathBuf> {
+    explicit
+        .filter(|path| !path.as_os_str().is_empty())
+        .or_else(|| {
+            std::env::var_os("ILEARNED_DB")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        })
+        .or_else(|| {
+            file.and_then(|f| f.db.clone())
+                .filter(|path| !path.as_os_str().is_empty())
+        })
+}
+
+fn resolve_database_path(explicit: Option<PathBuf>, file: Option<&FileConfig>) -> Option<PathBuf> {
+    configured_database_path(explicit, file).or_else(|| {
+        let local = FileConfig::local_db_fallback();
+        if local.is_file() {
+            Some(local)
+        } else {
+            FileConfig::global_data_db_path().filter(|path| path.is_file())
+        }
+    })
+}
+
+fn resolve_bind(
+    bind: Option<SocketAddr>,
+    file: Option<&FileConfig>,
+) -> Result<SocketAddr, AppError> {
+    if let Some(bind) = bind {
+        return Ok(bind);
+    }
+    if let Some(bind) = parse_env("ILEARNED_BIND")? {
+        return Ok(bind);
+    }
+    match file.and_then(|f| f.bind.clone()) {
+        Some(s) => s
+            .parse()
+            .map_err(|e| AppError::InvalidInput(format!("invalid bind in config file {s:?}: {e}"))),
+        None => Ok("127.0.0.1:8787".parse().expect("default bind parses")),
+    }
+}
+
+fn resolve_lifecycle(
+    active_days: Option<u64>,
+    forget_days: Option<u64>,
+    retention_days: Option<u64>,
+    file: Option<&FileConfig>,
+) -> Result<LifecycleConfig, AppError> {
+    let file_days = |pick: fn(&FileConfig) -> Option<u64>| file.and_then(pick);
+    let defaults = LifecycleConfig::default();
+    Ok(LifecycleConfig {
+        active_period_days: resolve_setting(
+            active_days,
+            "ILEARNED_ACTIVE_DAYS",
+            file_days(|f| f.active_days),
+        )?
+        .unwrap_or(defaults.active_period_days),
+        forget_period_days: resolve_setting(
+            forget_days,
+            "ILEARNED_FORGET_DAYS",
+            file_days(|f| f.forget_days),
+        )?
+        .unwrap_or(defaults.forget_period_days),
+        retention_days: resolve_setting(
+            retention_days,
+            "ILEARNED_RETENTION_DAYS",
+            file_days(|f| f.retention_days),
+        )?
+        .unwrap_or(defaults.retention_days),
+    })
 }
 
 /// Runtime configuration.
@@ -352,73 +582,18 @@ impl Config {
         embedding: Option<EmbeddingConfig>,
         file: Option<FileConfig>,
     ) -> Result<Self, AppError> {
-        let db_path = db_path
-            .filter(|path| !path.as_os_str().is_empty())
-            .or_else(|| {
-                std::env::var_os("ILEARNED_DB")
-                    .filter(|path| !path.is_empty())
-                    .map(PathBuf::from)
-            })
-            .or_else(|| {
-                file.as_ref()
-                    .and_then(|f| f.db.clone())
-                    .filter(|path| !path.as_os_str().is_empty())
-            });
         // No configured database: probe the local project store, then the
         // global data store. Error instead of silently creating a default.
-        let db_path = match db_path {
-            Some(path) => path,
-            None => {
-                let local = FileConfig::local_db_fallback();
-                if local.is_file() {
-                    local
-                } else if let Some(global) =
-                    FileConfig::global_data_db_path().filter(|path| path.is_file())
-                {
-                    global
-                } else {
-                    return Err(AppError::InvalidInput(
-                        "db path is not configured: set db in a config file or \
-                         ILEARNED_DB, or create ./.ilearned/ilearned.db or the \
-                         XDG data database"
-                            .to_string(),
-                    ));
-                }
-            }
-        };
-        let bind = if let Some(bind) = bind {
-            bind
-        } else if let Some(bind) = parse_env("ILEARNED_BIND")? {
-            bind
-        } else {
-            match file.as_ref().and_then(|f| f.bind.clone()) {
-                Some(s) => s.parse().map_err(|e| {
-                    AppError::InvalidInput(format!("invalid bind in config file {s:?}: {e}"))
-                })?,
-                None => "127.0.0.1:8787".parse().expect("default bind parses"),
-            }
-        };
-        let file_days = |pick: fn(&FileConfig) -> Option<u64>| file.as_ref().and_then(pick);
-        let lifecycle = LifecycleConfig {
-            active_period_days: resolve_setting(
-                active_days,
-                "ILEARNED_ACTIVE_DAYS",
-                file_days(|f| f.active_days),
-            )?
-            .unwrap_or(LifecycleConfig::default().active_period_days),
-            forget_period_days: resolve_setting(
-                forget_days,
-                "ILEARNED_FORGET_DAYS",
-                file_days(|f| f.forget_days),
-            )?
-            .unwrap_or(LifecycleConfig::default().forget_period_days),
-            retention_days: resolve_setting(
-                retention_days,
-                "ILEARNED_RETENTION_DAYS",
-                file_days(|f| f.retention_days),
-            )?
-            .unwrap_or(LifecycleConfig::default().retention_days),
-        };
+        let db_path = resolve_database_path(db_path, file.as_ref()).ok_or_else(|| {
+            AppError::InvalidInput(
+                "db path is not configured: set db in a config file or \
+                 ILEARNED_DB, or create ./.ilearned/ilearned.db or the \
+                 XDG data database"
+                    .to_string(),
+            )
+        })?;
+        let bind = resolve_bind(bind, file.as_ref())?;
+        let lifecycle = resolve_lifecycle(active_days, forget_days, retention_days, file.as_ref())?;
         Ok(Self {
             db_path,
             bind,

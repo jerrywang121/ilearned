@@ -126,5 +126,8 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
         Commands::Export(_) | Commands::Import(_) => Err(AppError::InvalidInput(
             "export/import run in main so stdout/file stay streamable".to_string(),
         )),
+        Commands::Config(_) => Err(AppError::InvalidInput(
+            "config is handled by the main dispatch".to_string(),
+        )),
     }
 }

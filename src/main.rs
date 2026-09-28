@@ -1,11 +1,44 @@
 use clap::Parser;
+use std::path::Path;
 use tokio::runtime::Builder;
 
 use ilearned::application::MemoryService;
-use ilearned::config::{Config, EmbeddingConfig, FileConfig};
+use ilearned::config::{Config, EmbeddingConfig, FileConfig, ResolvedConfig};
 use ilearned::embedding::openai::OpenAiEmbeddingProvider;
 use ilearned::storage::SqliteRepo;
-use ilearned::surfaces::cli::{exit_code, render_error, run_cli, Cli, Commands};
+use ilearned::surfaces::cli::{
+    commands::ConfigCommands, exit_code, render_error, run_cli, Cli, Commands,
+};
+
+fn run_config_command(
+    config_file: Option<&Path>,
+    command: &ConfigCommands,
+) -> Result<String, ilearned::AppError> {
+    match command {
+        ConfigCommands::Show => {
+            let (file, paths) = FileConfig::load_files_with_sources(config_file)?;
+            let config = ResolvedConfig::from_file(file)?;
+            let config_files = paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            serde_json::to_string_pretty(&serde_json::json!({
+                "config": config,
+                "config_files": config_files,
+            }))
+            .map_err(|e| ilearned::AppError::Internal(e.to_string()))
+        }
+        ConfigCommands::Init(args) => {
+            let path = if args.global {
+                FileConfig::global_path()
+            } else {
+                FileConfig::local_path()
+            };
+            FileConfig::init(&path)?;
+            Ok(format!("initialized config file {}", path.display()))
+        }
+    }
+}
 
 fn build_service(cfg: &Config) -> Result<MemoryService<SqliteRepo>, ilearned::AppError> {
     let repo = SqliteRepo::open(&cfg.db_path)?;
@@ -19,6 +52,16 @@ fn build_service(cfg: &Config) -> Result<MemoryService<SqliteRepo>, ilearned::Ap
 fn main() {
     let cli = Cli::parse();
     let json = cli.command.json();
+    if let Commands::Config(args) = &cli.command {
+        match run_config_command(cli.config_file.as_deref(), &args.command) {
+            Ok(out) => println!("{out}"),
+            Err(e) => {
+                eprintln!("{}", render_error(&e, json));
+                std::process::exit(exit_code(&e));
+            }
+        }
+        return;
+    }
     // The selected CLI config file overlays the default global/local files;
     // environment variables then override file values per setting.
     let files =
@@ -221,5 +264,6 @@ fn main() {
             println!("{msg}");
             std::process::exit(if summary.errors.is_empty() { 0 } else { 2 });
         }
+        Commands::Config(_) => unreachable!("config commands are handled before service setup"),
     }
 }
