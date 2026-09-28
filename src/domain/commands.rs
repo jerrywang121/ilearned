@@ -1,3 +1,4 @@
+use crate::domain::topics::validate_topic;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -11,9 +12,7 @@ pub struct AddCommand {
 
 impl AddCommand {
     pub fn validate(&self) -> Result<(), AppError> {
-        if self.topic.trim().is_empty() {
-            return Err(AppError::InvalidInput("topic is required".to_string()));
-        }
+        validate_topic(&self.topic)?;
         if self.when_text.trim().is_empty() {
             return Err(AppError::InvalidInput("when is required".to_string()));
         }
@@ -87,6 +86,30 @@ impl Default for SearchQuery {
 pub struct FeedbackCommand {
     pub topic: String,
     pub id: String,
+}
+
+/// Topic listing/search input. `query=None`/blank lists all topics;
+/// a query containing `#` is a multi-level wildcard pattern, otherwise a
+/// case-sensitive substring. `level` truncates after matching.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TopicQuery {
+    pub query: Option<String>,
+    pub level: Option<u32>,
+    pub limit: u32,
+    pub offset: u32,
+    pub deep: bool,
+}
+
+impl Default for TopicQuery {
+    fn default() -> Self {
+        Self {
+            query: None,
+            level: None,
+            limit: 20,
+            offset: 0,
+            deep: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

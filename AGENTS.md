@@ -22,6 +22,11 @@ lifecycle transitions, or ranking logic.
   `forgotten`/`inactive` stay reachable (search still hides them).
 - Search excludes `deleted`/`forgotten` always; `inactive` only with
   `deep=true`.
+- Topics hierarchical (`topic/sub/...`, segments `[a-z0-9_-]`; `#`
+  pattern-only, never stored): writes validate canonical form,
+  `search`/`export --topic` accept `#` multi-level wildcards (bare =
+  exact only; `clear --topic` stays exact), `list_topics` lists/searches
+  distinct topics.
 - SQLite `when_text/if_text/do_text/check_text`, INTEGER epoch timestamps;
   wire uses `when/if/do/check`, RFC 3339.
 - Reconcile before every op (strict `>`: 60d→inactive, 120d→forgotten);

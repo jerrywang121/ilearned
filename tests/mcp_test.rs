@@ -161,7 +161,9 @@ async fn tool_list_has_seven_tools() {
             "downgrade",
             "modify",
             "promote",
-            "search"
+            "search",
+            "topics_list",
+            "topics_search"
         ]
     );
 }

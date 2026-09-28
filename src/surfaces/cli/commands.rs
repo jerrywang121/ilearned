@@ -46,6 +46,17 @@ pub struct Cli {
     pub command: Commands,
 }
 
+/// Shared topic help: canonical hierarchical form for write paths.
+pub const TOPIC_HELP: &str =
+    "hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated";
+
+/// Topic filter help for search/export: canonical form plus `#` wildcards.
+pub const TOPIC_FILTER_HELP: &str = "hierarchical topic filter, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; # is a multi-level wildcard (travel/#, #/checkout, travel/#/checkout); bare travel matches exact only";
+
+/// Exact-match topic help for destructive paths (no wildcards accepted).
+pub const TOPIC_EXACT_HELP: &str =
+    "hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; exact match only, no wildcards";
+
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
     /// Add a new experience (sets good_count=1, state=active).
@@ -62,6 +73,8 @@ pub enum Commands {
     Downgrade(IdArgs),
     /// Clear experiences by topic or all (destructive, needs confirmation).
     Clear(ClearArgs),
+    /// List/search existing topics (hierarchical, paginated).
+    Topic(TopicArgs),
     /// Export experiences as JSONL (stdout, or --file PATH).
     Export(ExportArgs),
     /// Import experiences from JSONL (--file PATH or stdin).
@@ -76,8 +89,8 @@ pub enum Commands {
 
 #[derive(Debug, Clone, Args)]
 pub struct AddArgs {
-    /// Topic grouping for the experience (compound key with id).
-    #[arg(long)]
+    /// Hierarchical topic, e.g. travel/hotel/checkout.
+    #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
     /// Scenario this experience applies to, including context, conditions, and constraints.
     #[arg(long = "when")]
@@ -95,8 +108,8 @@ pub struct AddArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct SearchArgs {
-    /// Filter by topic.
-    #[arg(long)]
+    /// Hierarchical topic filter; # examples: travel/#, #/checkout.
+    #[arg(long, help = TOPIC_FILTER_HELP)]
     pub topic: Option<String>,
     /// FTS5 full-text query.
     #[arg(long)]
@@ -117,8 +130,8 @@ pub struct SearchArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct ModifyArgs {
-    /// Topic of the record to modify.
-    #[arg(long)]
+    /// Hierarchical topic of the record to modify.
+    #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
     /// Id of the record to modify.
     #[arg(long)]
@@ -139,8 +152,8 @@ pub struct ModifyArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct DeleteArgs {
-    /// Topic of the record to delete.
-    #[arg(long)]
+    /// Hierarchical topic of the record to delete.
+    #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
     /// Id of the record to delete.
     #[arg(long)]
@@ -152,8 +165,8 @@ pub struct DeleteArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct IdArgs {
-    /// Topic of the record.
-    #[arg(long)]
+    /// Hierarchical topic of the record.
+    #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
     /// Id of the record.
     #[arg(long)]
@@ -162,8 +175,8 @@ pub struct IdArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct ClearArgs {
-    /// Clear a single topic.
-    #[arg(long, conflicts_with = "all", required_unless_present = "all")]
+    /// Clear a single topic (exact match; no wildcards).
+    #[arg(long, conflicts_with = "all", required_unless_present = "all", help = TOPIC_EXACT_HELP)]
     pub topic: Option<String>,
     /// Clear all topics.
     #[arg(long, conflicts_with = "topic", required_unless_present = "topic")]
@@ -182,8 +195,8 @@ pub struct ServeArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct ExportArgs {
-    /// Filter by topic.
-    #[arg(long)]
+    /// Hierarchical topic filter; # examples: travel/#, #/checkout.
+    #[arg(long, help = TOPIC_FILTER_HELP)]
     pub topic: Option<String>,
     /// Include inactive records (deleted/forgotten always excluded).
     #[arg(long)]
@@ -202,4 +215,52 @@ pub struct ImportArgs {
     /// Without --merge every line gets a fresh id.
     #[arg(long)]
     pub merge: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TopicArgs {
+    #[command(subcommand)]
+    pub command: TopicCommands,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum TopicCommands {
+    /// List existing topics, optionally truncated to --level depth.
+    List(TopicListArgs),
+    /// Search topics by substring or # wildcard pattern.
+    Search(TopicSearchArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TopicListArgs {
+    /// Limit hierarchy depth (e.g. --level 2 shows travel/hotel, not travel/hotel/checkout).
+    #[arg(long)]
+    pub level: Option<u32>,
+    /// Max topics (default 20).
+    #[arg(long, default_value_t = 20)]
+    pub limit: u32,
+    /// Result offset (default 0).
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
+    /// Include topics that only have inactive records.
+    #[arg(long)]
+    pub deep: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TopicSearchArgs {
+    /// Substring or # multi-level wildcard pattern (e.g. hotel, travel/#, #/checkout).
+    pub query: String,
+    /// Limit hierarchy depth (applied after matching).
+    #[arg(long)]
+    pub level: Option<u32>,
+    /// Max topics (default 20).
+    #[arg(long, default_value_t = 20)]
+    pub limit: u32,
+    /// Result offset (default 0).
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
+    /// Include topics that only have inactive records.
+    #[arg(long)]
+    pub deep: bool,
 }

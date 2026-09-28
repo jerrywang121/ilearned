@@ -191,6 +191,68 @@ async fn pagination_clamped() {
 }
 
 #[tokio::test]
+async fn topics_list_search_and_level_zero() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for topic in ["travel/hotel/checkout", "other/x"] {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic":topic,"when":"w","if":"i","do":"d","check":"c"}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    // list: both sorted.
+    let list: Value = client
+        .get(srv.url("/api/v1/topics"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        list,
+        serde_json::json!(["other/x", "travel/hotel/checkout"])
+    );
+    // level=1 truncates + dedups.
+    let list: Value = client
+        .get(srv.url("/api/v1/topics?level=1"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list, serde_json::json!(["other", "travel"]));
+    // # pattern search (# URL-encoded as %23).
+    let list: Value = client
+        .get(srv.url("/api/v1/topics?q=travel/%23/checkout"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list, serde_json::json!(["travel/hotel/checkout"]));
+    // level=0 => 400.
+    let r = client
+        .get(srv.url("/api/v1/topics?level=0"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 400);
+}
+
+#[tokio::test]
 async fn delete_missing_is_404_and_clear_requires_confirm() {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::time::Duration;

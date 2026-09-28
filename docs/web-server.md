@@ -30,6 +30,7 @@
   | `POST` | `/experiences/:topic/:id/downgrade` | Feedback (`bad_count+1`, restores to active), redirects to detail |
   | `POST` | `/experiences/:topic/:id/delete` | Requires `confirm=yes` field, else 400; redirects to `/` |
   | `GET/POST` | `/clear` | Requires `confirm=yes` plus a topic or `all=true`, else 400 |
+  | `GET` | `/topics` | Topic list/search page; query `q,level,deep,limit,offset`; linked from `/` |
 
 - Askama auto-escaping is ON for all templates; error pages render the
   `AppError` message with the mapped status (400/404/503/500).

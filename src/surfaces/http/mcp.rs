@@ -12,7 +12,7 @@ use rmcp::{tool, tool_handler, tool_router};
 use serde::Deserialize;
 
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery,
+    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
 };
 use crate::domain::experience::Experience;
 use crate::error::AppError;
@@ -61,7 +61,9 @@ pub struct SearchArgs {
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct AddArgs {
-    #[schemars(description = "Topic grouping for the experience")]
+    #[schemars(
+        description = "Hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard"
+    )]
     pub topic: String,
     #[schemars(
         description = "Scenario this experience applies to, including context, conditions, and constraints"
@@ -123,6 +125,34 @@ pub struct ClearArgs {
     pub all: Option<bool>,
     #[schemars(description = "Must be true: destructive-action confirmation")]
     pub confirm: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+pub struct TopicsListArgs {
+    #[schemars(description = "Limit hierarchy depth (applied after matching)")]
+    pub level: Option<u32>,
+    #[schemars(description = "Max topics (default 20, clamped to 100)")]
+    pub limit: Option<u32>,
+    #[schemars(description = "Result offset for pagination (default 0)")]
+    pub offset: Option<u32>,
+    #[schemars(description = "Include topics that only have inactive records")]
+    pub deep: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+pub struct TopicsSearchArgs {
+    #[schemars(
+        description = "Substring or # multi-level wildcard pattern (e.g. hotel, travel/#, #/checkout)"
+    )]
+    pub query: String,
+    #[schemars(description = "Limit hierarchy depth (applied after matching)")]
+    pub level: Option<u32>,
+    #[schemars(description = "Max topics (default 20, clamped to 100)")]
+    pub limit: Option<u32>,
+    #[schemars(description = "Result offset for pagination (default 0)")]
+    pub offset: Option<u32>,
+    #[schemars(description = "Include topics that only have inactive records")]
+    pub deep: Option<bool>,
 }
 
 pub struct IlearnedTools {
@@ -275,11 +305,49 @@ impl IlearnedTools {
         let n = self.svc.clear(&cmd).map_err(map_err)?;
         ok_json(&serde_json::json!({"cleared": n}))
     }
+
+    #[tool(description = "List existing topics, optionally truncated to a hierarchy depth")]
+    fn topics_list(
+        &self,
+        Parameters(a): Parameters<TopicsListArgs>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let out = self
+            .svc
+            .list_topics(&TopicQuery {
+                query: None,
+                level: a.level,
+                limit: a.limit.unwrap_or(20),
+                offset: a.offset.unwrap_or(0),
+                deep: a.deep.unwrap_or(false),
+            })
+            .map_err(map_err)?;
+        ok_json(&out)
+    }
+
+    #[tool(
+        description = "Search topics by substring or # multi-level wildcard pattern (e.g. hotel, travel/#, #/checkout)"
+    )]
+    fn topics_search(
+        &self,
+        Parameters(a): Parameters<TopicsSearchArgs>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let out = self
+            .svc
+            .list_topics(&TopicQuery {
+                query: Some(a.query),
+                level: a.level,
+                limit: a.limit.unwrap_or(20),
+                offset: a.offset.unwrap_or(0),
+                deep: a.deep.unwrap_or(false),
+            })
+            .map_err(map_err)?;
+        ok_json(&out)
+    }
 }
 
 #[tool_handler(
     name = "ilearned",
-    instructions = "Local-first AI agent memory: a live rule book of learned experiences (when/if/do/check) grouped by topic. Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal (destructive actions need `confirm=true`)."
+    instructions = "Local-first AI agent memory: a live rule book of learned experiences (when/if/do/check) grouped by hierarchical topic (e.g. travel/hotel/checkout; search accepts # multi-level wildcard). Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal (destructive actions need `confirm=true`), `topics_list`/`topics_search` to browse topics."
 )]
 impl ServerHandler for IlearnedTools {}
 

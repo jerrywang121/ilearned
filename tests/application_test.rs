@@ -264,3 +264,117 @@ fn get_hides_deleted_but_shows_forgotten_and_inactive() {
         Err(ilearned::AppError::NotFound { .. })
     ));
 }
+
+#[test]
+fn add_rejects_invalid_topic() {
+    let (_d, s) = svc();
+    let mut cmd = add_cmd("Travel/Hotel");
+    cmd.topic = "Travel/Hotel".to_string();
+    assert!(matches!(
+        s.add(cmd),
+        Err(ilearned::AppError::InvalidInput(_))
+    ));
+}
+
+#[test]
+fn search_wildcard_middle_hash() {
+    let (_d, s) = svc();
+    s.add(add_cmd("travel/hotel/checkout")).unwrap();
+    s.add(add_cmd("travel/flight/checkout")).unwrap();
+    s.add(add_cmd("other/x")).unwrap();
+    let hits = s
+        .search(&SearchQuery {
+            topic: Some("travel/#/checkout".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    let topics: Vec<&str> = hits.iter().map(|e| e.topic.as_str()).collect();
+    assert_eq!(topics.len(), 2);
+    assert!(topics.contains(&"travel/hotel/checkout"));
+    assert!(topics.contains(&"travel/flight/checkout"));
+}
+
+#[test]
+fn search_bare_topic_is_exact_only() {
+    let (_d, s) = svc();
+    s.add(add_cmd("travel")).unwrap();
+    s.add(add_cmd("travel/hotel")).unwrap();
+    let hits = s
+        .search(&SearchQuery {
+            topic: Some("travel".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].topic, "travel");
+}
+
+#[test]
+fn list_topics_level_query_pagination() {
+    use ilearned::domain::TopicQuery;
+    let (_d, s) = svc();
+    s.add(add_cmd("travel/hotel/checkout")).unwrap();
+    s.add(add_cmd("travel/hotel/lobby")).unwrap();
+    s.add(add_cmd("other/x")).unwrap();
+    // level dedup: first two segments only.
+    let got = s
+        .list_topics(&TopicQuery {
+            level: Some(2),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(got, vec!["other/x", "travel/hotel"]);
+    // substring query matches full topic, truncation applies after.
+    let got = s
+        .list_topics(&TopicQuery {
+            query: Some("hot".to_string()),
+            level: Some(1),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(got, vec!["travel"]);
+    // pagination clamps; level=0 is invalid.
+    assert!(s
+        .list_topics(&TopicQuery {
+            limit: 0,
+            ..Default::default()
+        })
+        .unwrap()
+        .is_empty());
+    assert!(matches!(
+        s.list_topics(&TopicQuery {
+            level: Some(0),
+            ..Default::default()
+        }),
+        Err(ilearned::AppError::InvalidInput(_))
+    ));
+}
+
+#[test]
+fn clear_rejects_wildcard_topic() {
+    use ilearned::domain::ClearCommand;
+    let (_d, s) = svc();
+    s.add(add_cmd("travel/hotel")).unwrap();
+    assert!(matches!(
+        s.clear(&ClearCommand::Topic("travel/#".to_string())),
+        Err(ilearned::AppError::InvalidInput(_))
+    ));
+}
+
+#[test]
+fn semantic_search_respects_middle_hash() {
+    use ilearned::embedding::FakeEmbeddingProvider;
+    let (_d, s) = svc();
+    let s = s.with_embedding_provider(FakeEmbeddingProvider::new());
+    s.add(add_cmd("travel/hotel/checkout")).unwrap();
+    s.add(add_cmd("other/x")).unwrap();
+    let hits = s
+        .search(&SearchQuery {
+            topic: Some("travel/#/checkout".to_string()),
+            semantic: Some("deploy worker".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].topic, "travel/hotel/checkout");
+}
