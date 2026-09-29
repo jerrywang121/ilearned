@@ -333,6 +333,22 @@ fn list_topics_level_query_pagination() {
         })
         .unwrap();
     assert_eq!(got, vec!["travel"]);
+    // query is lowercased before matching: uppercase substring and
+    // uppercase `#` pattern both match lowercase topics.
+    let got = s
+        .list_topics(&TopicQuery {
+            query: Some("HOT".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(got, vec!["travel/hotel/checkout", "travel/hotel/lobby"]);
+    let got = s
+        .list_topics(&TopicQuery {
+            query: Some("Travel/#".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(got, vec!["travel/hotel/checkout", "travel/hotel/lobby"]);
     // pagination clamps; level=0 is invalid.
     assert!(s
         .list_topics(&TopicQuery {

@@ -18,7 +18,7 @@ Ordered implementation milestones (see `docs/superpowers/plans/2026-09-27-initia
   - [x] CLI smoke on temp DB: add → search → promote → delete
   - [x] REST smoke: `/healthz` + CRUD + error codes
   - [x] Web smoke: `/` renders, confirm-gated delete enforced
-  - [x] MCP smoke: `tools/list` shows 7 tools
+  - [x] MCP smoke: `tools/list` shows 9 tools
   - [x] Docs review: `cli.md`, `rest-api.md`, `mcp.md`, `storage.md`,
     `architecture.md`, `web-server.md`, `development.md`, `AGENTS.md`
 

@@ -35,8 +35,9 @@
   (`travel/#`, `#/checkout`, `travel/#/checkout`); bare `travel` matches
   only the exact topic.
 - `GET /api/v1/topics?level=&q=&limit=&offset=&deep=`: distinct topics
-  sorted ascending, same visibility as search. `q` is a case-sensitive
-  substring, or a `#` pattern when it contains `#` (matched against the
+  sorted ascending, same visibility as search. `q` is a substring
+  (lowercased before matching, so case-insensitive), or a `#` pattern
+  when it contains `#` (matched against the
   full topic before truncation; `#` must be URL-encoded as `%23`). `level`
   truncates to the first N segments then dedups (`level=0` → 400).
   Pagination mirrors search (default `limit=20 offset=0`, clamp 100).

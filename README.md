@@ -12,24 +12,24 @@ Agents learn by doing. `ilearned` stores those lessons as **experiences** — st
 
 Each experience records:
 
-| Field                      | Meaning                                                                                                                                                                       |
-| ----------------------------| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `topic` / `id`             | Compound key; `id` is an 8-char unique id within the topic                                                                                                                    |
-| `when`                     | Scenario this experience applies to, including context, conditions, and constraints.                                                                                          |
-| `if`                       | Trigger(s), e.g. something happened, observed, or detected.                                                                                                                   |
-| `do`                       | Action(s) the agent should take / try, include steps, procedures, and instructions.                                                                                           |
-| `check`                    | Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action. |
-| `updated_at`               | Creation / last-update timestamp (RFC 3339 on the wire)                                                                                                                       |
-| `good_count` / `bad_count` | Positive / negative feedback tallies                                                                                                                                          |
-| `state`                    | `active` / `inactive` / `deleted` / `forgotten` (internal maintenance)                                                                                                        |
+| Field | Meaning |
+| --- | --- |
+| `topic` / `id` | Compound key; `id` is an 8-char unique id within the topic |
+| `when` | Scenario this experience applies to, including context, conditions, and constraints. |
+| `if` | Trigger(s), e.g. something happened, observed, or detected. |
+| `do` | Action(s) the agent should take / try, include steps, procedures, and instructions. |
+| `check` | Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action. |
+| `updated_at` | Creation / last-update timestamp (RFC 3339 on the wire) |
+| `good_count` / `bad_count` | Positive / negative feedback tallies (`add` sets `1` / `0`) |
+| `state` | `active` (default on `add`) / `inactive` / `deleted` / `forgotten` (internal maintenance) |
 
 All behavior lives in one application service (`MemoryService`); CLI, REST, web, and MCP surfaces are thin adapters over it.
 
 ## Features
 
-- **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use.
-- **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`).
-- **Lifecycle management** — `active` (default 60d) → `inactive` → `forgotten` (default 120d), with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`.
+- **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use. (Surfaces: CLI · REST · Web · HTTP MCP · stdio MCP.)
+- **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`, tie-break `updated_at DESC, topic ASC, id ASC`).
+- **Lifecycle management** — `active` → `inactive` after 60d untouched → `forgotten` after 120d untouched, with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`; explicit detail reads still reach `inactive`/`forgotten` (`deleted`/missing → `NotFound`).
 - **Feedback loop** — `promote`/`downgrade` bump `good_count`/`bad_count`; `modify`/`promote`/`downgrade` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life.
 - **Local-first** — single-user, SQLite (WAL) backend, no auth, no JS build.
 
@@ -87,10 +87,10 @@ ilearned serve [--bind ADDR]
 ilearned mcp
 ```
 
-- Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`.
+- Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`. `delete` on a never-existing `(topic, id)` is not-found (exit 1); deleting an already-deleted record is idempotent success.
 - `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file.
 - Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `modify` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `downgrade` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`; and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label. `config init` prints only the generated file path.
-- Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth, `--limit/--offset/--deep` paginate).
+- Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
 - `modify` needs at least one non-blank field (blank-only values are ignored).
 - Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` always dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
@@ -103,7 +103,7 @@ Full reference: [docs/cli.md](docs/cli.md).
 | --- | --- | --- |
 | `GET` | `/healthz` | Readiness probe → `{"ok":true}` |
 | `GET` / `POST` | `/api/v1/experiences` | Search/browse · add (201) |
-| `PATCH` / `DELETE` | `/api/v1/experiences/:topic/:id` | Modify · delete (204; never-existing id → 404) |
+| `PATCH` / `DELETE` | `/api/v1/experiences/:topic/:id` | Modify · delete (204; never-existing id → 404, already-deleted → idempotent 204) |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | `good_count + 1` |
 | `POST` | `/api/v1/experiences/:topic/:id/downgrade` | `bad_count + 1` |
 | `DELETE` | `/api/v1/experiences?topic=X&confirm=true` | Clear topic/all (exactly one of `topic` / `all=true`) |
@@ -152,18 +152,20 @@ per-field by local `./.ilearned/config.toml`, then by the explicit
 | Forget period (days) | `forget_days` | `ILEARNED_FORGET_DAYS` | `120` |
 | Retention (days) | `retention_days` | `ILEARNED_RETENTION_DAYS` | `60` |
 | Embedding endpoint/model/key | `[embedding] endpoint/model/api_key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
-| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims is informational only, never validated) |
+| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims stored per vector but unused for filtering) |
 | Search cap | — (code constant `MAX_LIMIT`) | — | `100` (larger `limit` clamps, no error) |
 
 `MAX_LIMIT` is a compile-time constant in `application::service`; there is
 no flag/env knob — a deliberate follow-up (see Roadmap). Semantic search
 stores one vector per experience per embedding `model` (`embeddings`
-keyed `(topic,id,model)`); **changing the embedding model or dimensions in
-TOML/env
+keyed `(topic,id,model)`); **changing the embedding model in TOML/env
 orphans existing vectors** — old-model rows are never re-embedded or
 compared, and the new model only sees records written (or modified) after
-the switch. To migrate, re-embed after switching (e.g. `modify` each record
-with a real field change — blank-only `modify` is rejected), or wipe vectors by deleting the rows for the old model.
+the switch. `dims` is stored alongside each vector but never used for
+filtering (cosine runs over the shorter length), so changing `dims` alone
+does not orphan rows. To migrate after a model switch, re-embed (e.g.
+`modify` each record with a real field change — blank-only `modify` is
+rejected), or wipe vectors by deleting the rows for the old model.
 There is no automatic migration path yet.
 
 Embedding failure on `add`/`modify` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.

@@ -108,7 +108,7 @@ fn handshake(c: &mut StdioChild) {
 }
 
 #[test]
-fn stdio_lists_seven_tools() {
+fn stdio_lists_nine_tools() {
     let dir = TempDir::new().unwrap();
     let config = config_arg(&dir);
     let mut c = StdioChild::spawn(&["--config-file", &config, "mcp"], dir.path());

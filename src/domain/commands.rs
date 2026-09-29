@@ -90,7 +90,9 @@ pub struct FeedbackCommand {
 
 /// Topic listing/search input. `query=None`/blank lists all topics;
 /// a query containing `#` is a multi-level wildcard pattern, otherwise a
-/// case-sensitive substring. `level` truncates after matching.
+/// substring. The query is lowercased before matching (topics are always
+/// lowercase), so matching is case-insensitive. `level` truncates after
+/// matching.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopicQuery {
     pub query: Option<String>,

@@ -161,7 +161,7 @@ async fn spawn_client() -> McpClient {
 }
 
 #[tokio::test]
-async fn tool_list_has_seven_tools() {
+async fn tool_list_has_nine_tools() {
     let mut mcp = spawn_client().await;
     let resp = mcp.rpc("tools/list", serde_json::json!({})).await;
     let tools = resp["result"]["tools"].as_array().unwrap();

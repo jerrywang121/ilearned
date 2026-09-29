@@ -537,14 +537,20 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     /// List/search distinct topics. Reconcile-first; visibility follows
     /// search (deleted/forgotten never contribute, inactive only with
     /// `deep`). `query` is a substring or `#` pattern matched against the
-    /// full topic; `level` truncates after matching, then dedups.
+    /// full topic; the query is lowercased first (topics are always
+    /// lowercase), so matching is case-insensitive. `level` truncates
+    /// after matching, then dedups.
     pub fn list_topics(&self, q: &TopicQuery) -> Result<Vec<String>, AppError> {
         if q.level == Some(0) {
             return Err(AppError::InvalidInput("level must be >= 1".to_string()));
         }
         self.reconcile()?;
         let base = self.repo.distinct_topics(q.deep)?;
-        let query = q.query.clone().filter(|s| !s.trim().is_empty());
+        let query = q
+            .query
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_lowercase());
         // Validate a `#` pattern once up front, not per stored topic.
         let is_pattern = query
             .as_deref()

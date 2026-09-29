@@ -71,6 +71,7 @@ ilearned mcp
   `--config-file PATH` layer. Missing default files are ignored; the explicit
   file must exist. Malformed TOML or unknown keys abort with exit 2; an
   unparseable `bind` or numeric environment setting aborts with exit 2.
+
   ```toml
   db = "./ilearned.db"
   bind = "127.0.0.1:8787"
@@ -84,6 +85,7 @@ ilearned mcp
   dims = 768
   timeout_secs = 30
   ```
+  
 - Embedding provider (optional): use `[embedding] endpoint`, `model`,
   `api_key`, `dims`, and `timeout_secs` in TOML or the corresponding
   `ILEARNED_EMBED_*` environment variables (defaults 1536 dimensions / 30s).
@@ -141,8 +143,9 @@ ilearned mcp
   honoring visibility (`deleted`/`forgotten` never contribute, `inactive`
   only with `--deep`). `--level N` truncates each topic to its first N
   segments then dedups (`--level 2` shows `travel/hotel`, not
-  `travel/hotel/checkout`). `topic search QUERY` filters by case-sensitive
-  substring, or by `#` pattern when QUERY contains `#` (matched against the
+  `travel/hotel/checkout`). `topic search QUERY` filters by substring
+  (lowercased before matching, so case-insensitive), or by `#` pattern
+  when QUERY contains `#` (matched against the
   full topic before truncation). Both paginate with `--limit` (default 20,
   clamped to 100) / `--offset`; `--level 0` is rejected (exit 2).
 - Failures write a structured error to stderr (`{"error": "..."}` with
