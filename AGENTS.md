@@ -45,3 +45,21 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 Behavior changes require updating the matching `docs/*.md` and tests.
+
+## Release
+
+DO NOT do Release without explicit confirmation from the author.
+The Github Action has been setup for the build and release.
+To trigger the release with new version, use below command. 
+
+```bash
+# 1. Edit Cargo.toml: version = "0.1.1"
+# 2. Commit
+git add Cargo.toml
+git commit -m "chore: release 0.1.1"
+git push
+
+# 3. Tag and push the tag (triggers the workflow)
+git tag v0.1.1
+git push origin v0.1.1
+```
