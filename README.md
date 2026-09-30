@@ -35,6 +35,30 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 
 ## Installation
 
+### npm
+
+```bash
+npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned@0.1.0
+# or run without installing
+npx @jerrywang121/ilearned --help
+```
+
+### Script
+
+Linux and macOS
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jerrywang121/ilearned/releases/download/v0.1.0/ilearned-installer.sh | sh
+```
+
+Windows
+
+```Powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/jerrywang121/ilearned/releases/download/v0.1.0/ilearned-installer.ps1 | iex"
+```
+
+### Build from source
+
 Requirements: Rust toolchain (1.98+) and a C toolchain (SQLite builds from source via rusqlite `bundled`; no OpenSSL headers needed — reqwest uses rustls).
 
 ```bash
@@ -48,14 +72,14 @@ cargo build --release
 
 ```bash
 # Add an experience
-ilearned add --topic rust --when "deploy fails" --if "alert fires" \
-  --do "restart worker" --check "health ok"
+ilearned add --topic "travel/hotel/booking" --when "family trip" --if "child age < 1y old" \
+  --do "request baby cot" --check "hotel website states baby cot available"
 
 # Search it (human output by default, --json for agents/scripts)
-ilearned search --topic rust --text deploy --json
+ilearned search --topic "travel/#" --text child --json
 
 # Positive feedback
-ilearned promote --topic rust --id <id>
+ilearned promote --topic "travel/hotel/booking" --id <id>
 
 # Serve REST + web + MCP on one port
 ilearned serve
