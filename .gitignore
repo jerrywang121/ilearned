@@ -5,6 +5,7 @@
 .serena/
 .ilearned/
 ilearned.db*
+.github/skills/
 
 # Git worktrees
 .worktrees/
