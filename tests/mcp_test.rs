@@ -234,7 +234,7 @@ async fn mutation_tools_return_enveloped_results() {
     assert_eq!(
         promoted,
         serde_json::json!({
-            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 0}
+            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 0, "state": "active"}
         })
     );
 
@@ -245,7 +245,7 @@ async fn mutation_tools_return_enveloped_results() {
     assert_eq!(
         downgraded,
         serde_json::json!({
-            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 1}
+            "modified": {"topic": "mcp", "id": id, "good_count": 2, "bad_count": 1, "state": "active"}
         })
     );
 

@@ -55,6 +55,11 @@ ilearned mcp
 - Lifecycle tuning uses `active_days`, `forget_days`, and `retention_days` in
   TOML or `ILEARNED_ACTIVE_DAYS`, `ILEARNED_FORGET_DAYS`, and
   `ILEARNED_RETENTION_DAYS` in the environment (defaults 60 / 120 / 60).
+  `auto_delete_threshold` (TOML only, no env var; default `0.3`) auto-deletes
+  a record when its feedback score `good_count / (good_count + bad_count)`
+  drops strictly below the threshold after a `demote`; `0.0` disables
+  auto-delete and `1.0` deletes on the first demote. Values outside
+  `0.0..=1.0` are rejected with exit 2.
   Precedence is `serve --bind` (for bind only) > env > explicit config-file
   overlay > local file > global file > defaults.
 - Database path resolution uses a configured value first: `ILEARNED_DB`, then
@@ -78,6 +83,7 @@ ilearned mcp
   active_days = 60
   forget_days = 120
   retention_days = 60
+  auto_delete_threshold = 0.3
   [embedding]
   endpoint = "http://localhost:11434/v1"
   model = "nomic-embed-text"
@@ -96,8 +102,10 @@ ilearned mcp
   `update` returns `{"modified":{"topic":"...","id":"..."}}`, and
   `delete` returns `{"deleted":{"topic":"...","id":"..."}}` to confirm
   the impacted record. `promote`/`demote` return
-  `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`.
-  Human output adds only a short action label. `search` prints a JSON array in
+  `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}`;
+  `state` is `"deleted"` when a demote crossed the auto-delete threshold.
+  Human output adds only a short action label (demote appends
+  `[auto-deleted]` when the record was auto-deleted). `search` prints a JSON array in
   `--json` mode.
   `limit` defaults to 20 and is clamped to `MAX_LIMIT=100` service-side
   (larger values behave as 100, no error); `limit=0` and over-range

@@ -45,7 +45,8 @@
   `{"added":{"topic":"...","id":"..."}}`; `update` returns
   `{"modified":{"topic":"...","id":"..."}}`; `delete` returns
   `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote`
-  return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`;
+  return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}`
+  (`state` is `"deleted"` when a demote crossed the auto-delete threshold);
   and `clear` returns
   `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where
   `num_of_topics` counts unique topics.

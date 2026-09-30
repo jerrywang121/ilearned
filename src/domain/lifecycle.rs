@@ -5,6 +5,11 @@ pub struct LifecycleConfig {
     pub active_period_days: u64,
     pub forget_period_days: u64,
     pub retention_days: u64,
+    /// Demote auto-delete threshold: when `good_count / (good_count +
+    /// bad_count)` drops strictly below this after a demote, the record is
+    /// marked `deleted`. `0.0` disables auto-delete; `1.0` deletes on the
+    /// first demote.
+    pub auto_delete_threshold: f64,
 }
 
 impl Default for LifecycleConfig {
@@ -13,6 +18,7 @@ impl Default for LifecycleConfig {
             active_period_days: 60,
             forget_period_days: 120,
             retention_days: 60,
+            auto_delete_threshold: 0.3,
         }
     }
 }

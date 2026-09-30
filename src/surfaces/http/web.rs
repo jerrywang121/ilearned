@@ -385,11 +385,16 @@ async fn demote_action<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<Redirect, WebErr> {
-    svc.demote(&FeedbackCommand {
-        topic: topic.clone(),
-        id: id.clone(),
-    })
-    .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    let e = svc
+        .demote(&FeedbackCommand {
+            topic: topic.clone(),
+            id: id.clone(),
+        })
+        .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    // An auto-deleted record's detail page would 404; land on the list.
+    if matches!(e.state, crate::domain::State::Deleted) {
+        return Ok(Redirect::to("/"));
+    }
     Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
 }
 
