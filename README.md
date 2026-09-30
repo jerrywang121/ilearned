@@ -1,6 +1,6 @@
 # ilearned
 
-> Lightweight, local-first memory management for AI agents — a live rule book of learned experiences, not plain facts.
+> Lightweight, local-first memory for self-improving AI agents — a live rule book of learned experiences, not just plain facts.
 
 [![Build](https://img.shields.io/badge/build-cargo%20test-green)](docs/development.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

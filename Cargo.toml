@@ -2,7 +2,13 @@
 name = "ilearned"
 version = "0.1.0"
 edition = "2021"
-description = "Lightweight AI agent memory management tool"
+description = "Lightweight, local-first memory for self-improving AI agents"
+license = "MIT"
+repository = "https://github.com/jerrywang121/ilearned"
+homepage = "https://github.com/jerrywang121/ilearned"
+readme = "README.md"
+keywords = ["ai", "agent", "memory", "cli", "mcp", "self-improving"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "ilearned"
@@ -32,3 +38,8 @@ schemars = "1"
 [dev-dependencies]
 tempfile = "3"
 toml = "0.8"
+
+# Profile used by cargo-dist for release builds
+[profile.dist]
+inherits = "release"
+lto = "thin"
