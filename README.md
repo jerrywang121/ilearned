@@ -85,6 +85,14 @@ ilearned promote --topic "travel/hotel/booking" --id <id>
 ilearned serve
 ```
 
+## Agent Skill
+
+`ilearned` is the enabler, an agent SKILL completes the self-improving cycle. 
+
+An effective agent SKILL needs to be domain specific, and tuned towards your use cases and scenario.
+
+Here is an example for [ilearned-travel-agent](./example/skills/ilearned-travel-agent/SKILL.md) SKILL.
+
 ## Usage
 
 ### CLI
