@@ -13,7 +13,7 @@ lifecycle transitions, or ranking logic.
 ## Invariants
 
 - Compound key `(topic, id)`; `add` sets `good_count=1, bad_count=0,
-  state=active`; `modify` requires ≥1 non-blank field (blank-only values
+  state=active`; `update` requires ≥1 non-blank field (blank-only values
   are ignored).
 - `delete` on a never-existing id is `NotFound`; deleting an
   already-deleted record is idempotent success.

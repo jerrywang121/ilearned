@@ -123,12 +123,12 @@ fn stdio_lists_nine_tools() {
             "add",
             "clear",
             "delete",
-            "downgrade",
-            "modify",
+            "demote",
             "promote",
             "search",
             "topics_list",
-            "topics_search"
+            "topics_search",
+            "update"
         ]
     );
     c.shutdown();

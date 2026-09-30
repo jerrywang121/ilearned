@@ -7,7 +7,7 @@ use axum::{Form, Router};
 use serde::Deserialize;
 
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 use crate::domain::experience::Experience;
 use crate::error::AppError;
@@ -113,7 +113,7 @@ struct SearchTemplate {
 <p>
 <a href="/experiences/{{ e.topic }}/{{ e.id }}/edit">edit</a>
 <form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/promote" style="display:inline"><button>promote</button></form>
-<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/downgrade" style="display:inline"><button>downgrade</button></form>
+<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/demote" style="display:inline"><button>demote</button></form>
 <form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button>delete</button></form>
 </p>
 <p><a href="/">back</a></p>
@@ -351,7 +351,7 @@ async fn edit_submit<R: ExperienceRepo + VectorStore>(
     Form(f): Form<ExperienceForm>,
 ) -> Result<Redirect, WebErr> {
     let clean = |o: Option<String>| o.filter(|s| !s.trim().is_empty());
-    let cmd = ModifyCommand {
+    let cmd = UpdateCommand {
         topic: topic.clone(),
         id: id.clone(),
         when_text: clean(f.when_text),
@@ -365,7 +365,7 @@ async fn edit_submit<R: ExperienceRepo + VectorStore>(
             "no fields to update",
         ))));
     }
-    svc.modify(cmd).map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    svc.update(cmd).map_err(|e| WebErr(Box::new(svc_err(e))))?;
     Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
 }
 
@@ -381,11 +381,11 @@ async fn promote_action<R: ExperienceRepo + VectorStore>(
     Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
 }
 
-async fn downgrade_action<R: ExperienceRepo + VectorStore>(
+async fn demote_action<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<Redirect, WebErr> {
-    svc.downgrade(&FeedbackCommand {
+    svc.demote(&FeedbackCommand {
         topic: topic.clone(),
         id: id.clone(),
     })
@@ -491,10 +491,7 @@ pub fn web_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared<
         .route("/experiences/:topic/:id/edit", get(edit_form::<R>))
         .route("/experiences/:topic/:id", post(edit_submit::<R>))
         .route("/experiences/:topic/:id/promote", post(promote_action::<R>))
-        .route(
-            "/experiences/:topic/:id/downgrade",
-            post(downgrade_action::<R>),
-        )
+        .route("/experiences/:topic/:id/demote", post(demote_action::<R>))
         .route("/experiences/:topic/:id/delete", post(delete_action::<R>))
         .route("/clear", get(clear_page).post(clear_submit::<R>))
         .route("/topics", get(topics_page::<R>))

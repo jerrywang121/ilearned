@@ -146,7 +146,7 @@ impl ExperienceRepo for SqliteRepo {
     fn update(&self, e: &Experience) -> Result<(), AppError> {
         let db = self.db.lock().expect("db lock");
         // Clearing retention metadata is part of every canonical update
-        // (modify/promote/downgrade restore the record to active life).
+        // (update/promote/demote restore the record to active life).
         db.execute(
             "UPDATE experiences SET when_text=?3,if_text=?4,do_text=?5,check_text=?6,updated_at=?7,
              good_count=?8,bad_count=?9,state=?10,retention_started_at=NULL

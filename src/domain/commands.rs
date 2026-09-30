@@ -30,7 +30,7 @@ impl AddCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ModifyCommand {
+pub struct UpdateCommand {
     pub topic: String,
     pub id: String,
     pub when_text: Option<String>,
@@ -39,7 +39,7 @@ pub struct ModifyCommand {
     pub check_text: Option<String>,
 }
 
-impl ModifyCommand {
+impl UpdateCommand {
     pub fn has_updates(&self) -> bool {
         self.when_text
             .as_deref()

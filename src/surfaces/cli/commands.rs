@@ -11,7 +11,7 @@ pub struct JsonArgs {
     pub json: bool,
 }
 
-/// ilearned: lightweight AI agent memory management - a live rule book of learned experiences (when/if/do/check) grouped by topic. Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal.
+/// ilearned: lightweight AI agent memory management - a live rule book of learned experiences (when/if/do/check) grouped by topic. Use `search` to find applicable rules, `add` to record new lessons, `update` to refine them, `promote`/`demote` for feedback, `delete`/`clear` for removal.
 #[derive(Debug, Parser)]
 #[command(name = "ilearned", version)]
 pub struct Cli {
@@ -39,14 +39,14 @@ pub enum Commands {
     Add(AddArgs),
     /// Search experiences by topic, full-text, or semantic query.
     Search(SearchArgs),
-    /// Modify an existing experience (at least one field required).
-    Modify(ModifyArgs),
+    /// Update an existing experience (at least one field required).
+    Update(UpdateArgs),
     /// Soft-delete an experience (idempotent on already-deleted).
     Delete(DeleteArgs),
     /// Promote an experience (increments good_count, restores to active).
     Promote(IdArgs),
-    /// Downgrade an experience (increments bad_count).
-    Downgrade(IdArgs),
+    /// Demote an experience (increments bad_count).
+    Demote(IdArgs),
     /// Clear experiences by topic or all (destructive, needs confirmation).
     Clear(ClearArgs),
     /// List/search existing topics (hierarchical, paginated).
@@ -68,9 +68,9 @@ impl Commands {
         match self {
             Self::Add(a) => a.output.json,
             Self::Search(a) => a.output.json,
-            Self::Modify(a) => a.output.json,
+            Self::Update(a) => a.output.json,
             Self::Delete(a) => a.output.json,
-            Self::Promote(a) | Self::Downgrade(a) => a.output.json,
+            Self::Promote(a) | Self::Demote(a) => a.output.json,
             Self::Clear(a) => a.output.json,
             Self::Topic(a) => match &a.command {
                 TopicCommands::List(a) => a.output.json,
@@ -130,11 +130,11 @@ pub struct SearchArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-pub struct ModifyArgs {
-    /// Hierarchical topic of the record to modify.
+pub struct UpdateArgs {
+    /// Hierarchical topic of the record to update.
     #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
-    /// Id of the record to modify.
+    /// Id of the record to update.
     #[arg(long)]
     pub id: String,
     /// New scenario text (blank values ignored).

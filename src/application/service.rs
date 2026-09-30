@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::application::ranking::{cosine, rrf_fuse, RRF_K};
 use crate::domain::commands::{
-    AddCommand, ClearCommand, ClearSummary, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, ClearSummary, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 use crate::domain::experience::{Experience, State};
 use crate::domain::lifecycle::LifecycleConfig;
@@ -184,7 +184,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         }
     }
 
-    pub fn modify(&self, cmd: ModifyCommand) -> Result<Experience, AppError> {
+    pub fn update(&self, cmd: UpdateCommand) -> Result<Experience, AppError> {
         if !cmd.has_updates() {
             return Err(AppError::InvalidInput(
                 "at least one of when/if/do/check is required".to_string(),
@@ -249,7 +249,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         Ok(e)
     }
 
-    pub fn downgrade(&self, f: &FeedbackCommand) -> Result<Experience, AppError> {
+    pub fn demote(&self, f: &FeedbackCommand) -> Result<Experience, AppError> {
         self.reconcile()?;
         let mut e = match self.repo.get(&f.topic, &f.id)? {
             Some(e) if !matches!(e.state, State::Deleted) => e,
@@ -495,7 +495,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             }
             (Some(t), Some(s)) => {
                 // Combined: both rankings must succeed; embed failure is a
-                // typed error, never a silent downgrade to text-only.
+                // typed error, never a silent fallback to text-only.
                 let text_hits = self.repo.search_fts(t, sql_topic.as_deref(), q.deep)?;
                 let sem_hits = self.search_semantic(s, q, sql_topic.as_deref(), wildcard)?;
                 let text_keys: Vec<(String, String)> = text_hits

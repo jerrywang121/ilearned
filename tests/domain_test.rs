@@ -1,6 +1,6 @@
 use chrono::Utc;
 use ilearned::domain::lifecycle::{is_eligible, LifecycleConfig};
-use ilearned::domain::{AddCommand, Experience, ModifyCommand, State};
+use ilearned::domain::{AddCommand, Experience, State, UpdateCommand};
 use ilearned::AppError;
 
 fn valid_add() -> AddCommand {
@@ -39,8 +39,8 @@ fn add_rejects_empty_topic() {
 }
 
 #[test]
-fn modify_rejects_no_fields() {
-    let cmd = ModifyCommand {
+fn update_rejects_no_fields() {
+    let cmd = UpdateCommand {
         topic: "t".to_string(),
         id: "x".to_string(),
         when_text: None,
@@ -50,7 +50,7 @@ fn modify_rejects_no_fields() {
     };
     assert!(!cmd.has_updates());
 
-    let cmd = ModifyCommand {
+    let cmd = UpdateCommand {
         topic: "t".to_string(),
         id: "x".to_string(),
         when_text: Some("w".to_string()),
@@ -106,9 +106,9 @@ fn experience_serde_uses_readme_names() {
 }
 
 #[test]
-fn modify_blank_strings_are_not_updates() {
-    use ilearned::domain::ModifyCommand;
-    let cmd = ModifyCommand {
+fn update_blank_strings_are_not_updates() {
+    use ilearned::domain::UpdateCommand;
+    let cmd = UpdateCommand {
         topic: "t".to_string(),
         id: "x".to_string(),
         when_text: Some("   ".to_string()),

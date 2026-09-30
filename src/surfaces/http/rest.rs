@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::MemoryService;
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 use crate::error::AppError;
 use crate::storage::embeddings::VectorStore;
@@ -58,7 +58,7 @@ pub struct AddRequest {
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct ModifyRequest {
+pub struct UpdateRequest {
     #[serde(rename = "when")]
     pub when_text: Option<String>,
     #[serde(rename = "if")]
@@ -154,14 +154,14 @@ pub async fn add<R: ExperienceRepo + VectorStore>(
     Ok((StatusCode::CREATED, Json(e)))
 }
 
-/// Modify selected fields of an experience (body: non-blank subset of
+/// Update selected fields of an experience (body: non-blank subset of
 /// when/if/do/check; all-blank is 400). Missing/deleted id is 404.
-pub async fn modify<R: ExperienceRepo + VectorStore>(
+pub async fn update<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
-    Json(body): Json<ModifyRequest>,
+    Json(body): Json<UpdateRequest>,
 ) -> Result<Json<crate::domain::experience::Experience>, ApiError> {
-    let e = svc.modify(ModifyCommand {
+    let e = svc.update(UpdateCommand {
         topic,
         id,
         when_text: body.when_text,
@@ -193,11 +193,11 @@ pub async fn promote<R: ExperienceRepo + VectorStore>(
 }
 
 /// Negative feedback: increments bad_count.
-pub async fn downgrade<R: ExperienceRepo + VectorStore>(
+pub async fn demote<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
 ) -> Result<Json<crate::domain::experience::Experience>, ApiError> {
-    Ok(Json(svc.downgrade(&FeedbackCommand { topic, id })?))
+    Ok(Json(svc.demote(&FeedbackCommand { topic, id })?))
 }
 
 /// Clear by topic or all (destructive): requires `?confirm=true` plus exactly
@@ -253,13 +253,10 @@ pub fn rest_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared
         .route("/api/v1/topics", get(topics::<R>))
         .route(
             "/api/v1/experiences/:topic/:id",
-            patch(modify::<R>).delete(delete_one::<R>),
+            patch(update::<R>).delete(delete_one::<R>),
         )
         .route("/api/v1/experiences/:topic/:id/promote", post(promote::<R>))
-        .route(
-            "/api/v1/experiences/:topic/:id/downgrade",
-            post(downgrade::<R>),
-        )
+        .route("/api/v1/experiences/:topic/:id/demote", post(demote::<R>))
         .route("/api/v1/experiences", delete(clear::<R>))
 }
 

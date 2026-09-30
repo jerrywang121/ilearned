@@ -1,7 +1,7 @@
 use chrono::Utc;
 use ilearned::application::MemoryService;
 use ilearned::domain::lifecycle::LifecycleConfig;
-use ilearned::domain::{AddCommand, FeedbackCommand, ModifyCommand, SearchQuery, State};
+use ilearned::domain::{AddCommand, FeedbackCommand, SearchQuery, State, UpdateCommand};
 use ilearned::storage::repository::ExperienceRepo;
 use ilearned::storage::SqliteRepo;
 
@@ -39,7 +39,7 @@ fn add_modify_promote_delete_flow() {
     let p = s.promote(&f).unwrap();
     assert_eq!(p.good_count, 2);
 
-    // Force forgotten by backdating, then reconcile via next op; modify
+    // Force forgotten by backdating, then reconcile via next op; update
     // restores forgotten -> active.
     {
         let repo = s.repo();
@@ -59,7 +59,7 @@ fn add_modify_promote_delete_flow() {
             .unwrap();
     }
     let m = s
-        .modify(ModifyCommand {
+        .update(UpdateCommand {
             topic: e.topic.clone(),
             id: e.id.clone(),
             when_text: Some("new when".to_string()),
@@ -71,10 +71,10 @@ fn add_modify_promote_delete_flow() {
     assert_eq!(m.state, State::Active);
     assert_eq!(m.when_text, "new when");
 
-    // Delete then modify => NotFound; second delete idempotent.
+    // Delete then update => NotFound; second delete idempotent.
     s.delete(&e.topic, &e.id).unwrap();
     assert!(matches!(
-        s.modify(ModifyCommand {
+        s.update(UpdateCommand {
             topic: e.topic.clone(),
             id: e.id.clone(),
             when_text: Some("x".to_string()),

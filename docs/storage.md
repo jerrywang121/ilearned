@@ -26,7 +26,7 @@
   rows (there is no cascade).
 - `update()` clears `retention_started_at`; the service restores
   `inactive`/`forgotten` records to `active` with a fresh `updated_at`
-  before calling it (on `modify`/`promote`/`downgrade`).
+  before calling it (on `update`/`promote`/`demote`).
   `soft_delete()`/`clear()` set `state='deleted'` + fresh `updated_at` +
   retention start. `clear` skips already-deleted rows and returns the number
   of newly touched items plus the number of unique topics containing them.

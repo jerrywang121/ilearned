@@ -317,7 +317,7 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         .args([
             "--config-file",
             &db,
-            "modify",
+            "update",
             "--json",
             "--topic",
             "t",
@@ -361,7 +361,7 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         .args([
             "--config-file",
             &db,
-            "downgrade",
+            "demote",
             "--json",
             "--topic",
             "t",

@@ -29,12 +29,12 @@
   or pass
   `--config-file <path>` (with `db = "..."`) / `ILEARNED_DB` for an explicit
   location.
-- Tools (9): `search`, `add`, `modify`, `delete`, `promote`, `downgrade`,
+- Tools (9): `search`, `add`, `update`, `delete`, `promote`, `demote`,
   `clear`, `topics_list`, `topics_search`. Argument schemas mirror the domain commands exactly:
   `search{topic?,text?,semantic?,limit?,offset?,deep?}`,
   `add{topic,when,if,do,check}` (`if`/`do` are serde-renamed `if_text`/
-  `do_text` fields), `modify{topic,id,when?,if?,do?,check?}`,
-  `delete/promote/downgrade{topic,id}`, `clear{topic?,all?,confirm}`
+  `do_text` fields), `update{topic,id,when?,if?,do?,check?}`,
+  `delete/promote/demote{topic,id}`, `clear{topic?,all?,confirm}`
   (destructive `clear` requires `confirm: true` plus exactly one of
   `topic`/`all=true`, else `invalid_params`),
   `topics_list{level?,limit?,offset?,deep?}`,
@@ -42,9 +42,9 @@
   substring or `#` multi-level wildcard pattern).
   Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`).
   Mutation results use these JSON shapes: `add` returns
-  `{"added":{"topic":"...","id":"..."}}`; `modify` returns
+  `{"added":{"topic":"...","id":"..."}}`; `update` returns
   `{"modified":{"topic":"...","id":"..."}}`; `delete` returns
-  `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `downgrade`
+  `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote`
   return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`;
   and `clear` returns
   `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where

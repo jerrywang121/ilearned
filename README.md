@@ -30,7 +30,7 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 - **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use. (Surfaces: CLI · REST · Web · HTTP MCP · stdio MCP.)
 - **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`, tie-break `updated_at DESC, topic ASC, id ASC`).
 - **Lifecycle management** — `active` → `inactive` after 60d untouched → `forgotten` after 120d untouched, with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`; explicit detail reads still reach `inactive`/`forgotten` (`deleted`/missing → `NotFound`).
-- **Feedback loop** — `promote`/`downgrade` bump `good_count`/`bad_count`; `modify`/`promote`/`downgrade` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life.
+- **Feedback loop** — `promote`/`demote` bump `good_count`/`bad_count`; `update`/`promote`/`demote` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life.
 - **Local-first** — single-user, SQLite (WAL) backend, no auth, no JS build.
 
 ## Installation
@@ -105,11 +105,11 @@ ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
                   [--limit N] [--offset N] [--deep] [--json]
 ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
 ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep] [--json]
-ilearned modify --topic TOPIC --id ID [--when TEXT] [--if TEXT]
+ilearned update --topic TOPIC --id ID [--when TEXT] [--if TEXT]
                   [--do TEXT] [--check TEXT] [--json]
 ilearned delete --topic TOPIC --id ID [--yes] [--json]
 ilearned promote --topic TOPIC --id ID [--json]
-ilearned downgrade --topic TOPIC --id ID [--json]
+ilearned demote --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
@@ -121,9 +121,9 @@ ilearned mcp
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`. `delete` on a never-existing `(topic, id)` is not-found (exit 1); deleting an already-deleted record is idempotent success.
 - `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file.
-- Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `modify` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `downgrade` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`; and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label. `config init` prints only the generated file path.
+- Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `update` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`; and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label. `config init` prints only the generated file path.
 - Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
-- `modify` needs at least one non-blank field (blank-only values are ignored).
+- `update` needs at least one non-blank field (blank-only values are ignored).
 - Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` always dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
 
@@ -135,9 +135,9 @@ Full reference: [docs/cli.md](docs/cli.md).
 | --- | --- | --- |
 | `GET` | `/healthz` | Readiness probe → `{"ok":true}` |
 | `GET` / `POST` | `/api/v1/experiences` | Search/browse · add (201) |
-| `PATCH` / `DELETE` | `/api/v1/experiences/:topic/:id` | Modify · delete (204; never-existing id → 404, already-deleted → idempotent 204) |
+| `PATCH` / `DELETE` | `/api/v1/experiences/:topic/:id` | Update · delete (204; never-existing id → 404, already-deleted → idempotent 204) |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | `good_count + 1` |
-| `POST` | `/api/v1/experiences/:topic/:id/downgrade` | `bad_count + 1` |
+| `POST` | `/api/v1/experiences/:topic/:id/demote` | `bad_count + 1` |
 | `DELETE` | `/api/v1/experiences?topic=X&confirm=true` | Clear topic/all (exactly one of `topic` / `all=true`) |
 | `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`) |
 
@@ -147,11 +147,11 @@ Full reference: [docs/rest-api.md](docs/rest-api.md).
 
 ### Web UI
 
-Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at `/topics`, record detail, add/edit forms, promote/downgrade/delete actions, and a clear flow. Destructive posts require `confirm=yes`; all output is HTML-escaped. See [docs/web-server.md](docs/web-server.md).
+Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at `/topics`, record detail, add/edit forms, promote/demote/delete actions, and a clear flow. Destructive posts require `confirm=yes`; all output is HTML-escaped. See [docs/web-server.md](docs/web-server.md).
 
 ### MCP
 
-Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
+Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `update`, `delete`, `promote`, `demote`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
 
 For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout). When no database is configured, it uses an existing project-local `./.ilearned/ilearned.db`, then an existing XDG data database (`$XDG_DATA_HOME/ilearned/ilearned.db`, or `~/.local/share/ilearned/ilearned.db`). If neither exists, startup reports that the database path is not configured:
 
@@ -196,11 +196,11 @@ compared, and the new model only sees records written (or modified) after
 the switch. `dims` is stored alongside each vector but never used for
 filtering (cosine runs over the shorter length), so changing `dims` alone
 does not orphan rows. To migrate after a model switch, re-embed (e.g.
-`modify` each record with a real field change — blank-only `modify` is
+`update` each record with a real field change — blank-only `update` is
 rejected), or wipe vectors by deleting the rows for the old model.
 There is no automatic migration path yet.
 
-Embedding failure on `add`/`modify` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.
+Embedding failure on `add`/`update` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.
 
 ## Architecture
 

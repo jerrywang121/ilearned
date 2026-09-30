@@ -30,7 +30,7 @@ initialization, migrations, and all surface adapters.
 - `domain` — `Experience`, lifecycle state, validated commands, search input.
   No transport or database dependencies.
 - `application` — `MemoryService` implementing `get`, `search`, `add`,
-  `modify`, `delete`, `promote`, `downgrade`, `clear`, `list_topics`. The only entry point
+  `update`, `delete`, `promote`, `demote`, `clear`, `list_topics`. The only entry point
   for adapters. Generic over `R: ExperienceRepo + VectorStore`; semantic
   search, cosine, and RRF (`k=60`) live here. `add` retries only on
   primary-key/UNIQUE violations (other storage errors propagate); unknown
@@ -80,7 +80,7 @@ initialization, migrations, and all surface adapters.
   (query matched before `--level` truncation, paginated `limit/offset`).
 - Search never returns `deleted`/`forgotten` (even with `deep=true`);
   `inactive` only when `deep=true`.
-- Embedding failure on `add`/`modify` never rolls back the canonical write.
+- Embedding failure on `add`/`update` never rolls back the canonical write.
 - A semantic query that cannot obtain an embedding fails typed — never
   silently degrades to text-only search.
 

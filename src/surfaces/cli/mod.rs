@@ -9,7 +9,7 @@ pub use render::{
 
 use crate::application::MemoryService;
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 use crate::error::AppError;
 use crate::storage::embeddings::VectorStore;
@@ -44,8 +44,8 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
             })?;
             Ok(render_list(&out, json))
         }
-        Commands::Modify(a) => {
-            let e = svc.modify(ModifyCommand {
+        Commands::Update(a) => {
+            let e = svc.update(UpdateCommand {
                 topic: a.topic.clone(),
                 id: a.id.clone(),
                 when_text: a.when.clone(),
@@ -69,12 +69,12 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
             })?;
             Ok(render_feedback(&e, json, "promoted"))
         }
-        Commands::Downgrade(a) => {
-            let e = svc.downgrade(&FeedbackCommand {
+        Commands::Demote(a) => {
+            let e = svc.demote(&FeedbackCommand {
                 topic: a.topic.clone(),
                 id: a.id.clone(),
             })?;
-            Ok(render_feedback(&e, json, "downgraded"))
+            Ok(render_feedback(&e, json, "demoted"))
         }
         Commands::Clear(a) => {
             let target = if a.all {

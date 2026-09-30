@@ -5,10 +5,10 @@
 | `GET` | `/healthz` | Readiness; runs a zero-limit search to verify SQLite reachable + migrations applied | 200 `{"ok":true}` |
 | `GET` | `/api/v1/experiences` | Search/browse (`topic,text,semantic,limit,offset,deep`) | 200 array |
 | `POST` | `/api/v1/experiences` | Add | 201 record |
-| `PATCH` | `/api/v1/experiences/:topic/:id` | Modify selected fields (≥1 required) | 200 record |
+| `PATCH` | `/api/v1/experiences/:topic/:id` | Update selected fields (≥1 required) | 200 record |
 | `DELETE` | `/api/v1/experiences/:topic/:id` | Delete one: never-existing id → 404; already-deleted → idempotent 204 | 204, no body |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | Positive feedback (`good_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
-| `POST` | `/api/v1/experiences/:topic/:id/downgrade` | Negative feedback (`bad_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
+| `POST` | `/api/v1/experiences/:topic/:id/demote` | Negative feedback (`bad_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
 | `DELETE` | `/api/v1/experiences` | Clear by topic or all; requires `?confirm=true` plus exactly one of `?topic=X` / `?all=true` | 200 `{"cleared":{"num_of_topics":N,"num_of_items":M}}` |
 | `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`); no `q` = list, with `q` = search | 200 array of strings |
 
@@ -17,9 +17,9 @@
 - Bodies/query use public field names (`when,if,do,check`); timestamps
   RFC 3339. Add example:
   `{"topic":"rust","when":"...","if":"...","do":"...","check":"..."}`
-  (all five required, blanks rejected). Modify accepts any non-blank
+  (all five required, blanks rejected). Update accepts any non-blank
   subset of `when/if/do/check` (blank-only values are ignored, so an
-  all-blank modify is a 400).
+  all-blank update is a 400).
 - Pagination: default `limit=20 offset=0`; `limit` is clamped to
   `MAX_LIMIT=100` (larger values behave as 100, no error); `limit=0` and
   over-range `offset` return `[]`.
@@ -41,7 +41,7 @@
   full topic before truncation; `#` must be URL-encoded as `%23`). `level`
   truncates to the first N segments then dedups (`level=0` → 400).
   Pagination mirrors search (default `limit=20 offset=0`, clamp 100).
-- Errors: 400 validation (incl. bad FTS syntax, empty modify, clear
+- Errors: 400 validation (incl. bad FTS syntax, empty update, clear
   without `confirm=true` or with both/neither of `topic`/`all`), 404
   missing (incl. `deleted`, plus `DELETE`/`PATCH` on never-existing ids),
   503 embedding required-but-unavailable, 500

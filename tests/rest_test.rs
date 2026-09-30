@@ -110,7 +110,7 @@ async fn healthz_and_crud() {
         .unwrap();
     assert_eq!(list.as_array().unwrap().len(), 1);
 
-    // PATCH modify.
+    // PATCH update.
     let patched: Value = client
         .patch(srv.url(&format!("/api/v1/experiences/{topic}/{id}")))
         .json(&serde_json::json!({"when":"w2"}))

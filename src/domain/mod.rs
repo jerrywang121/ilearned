@@ -4,7 +4,7 @@ pub mod lifecycle;
 pub mod topics;
 
 pub use commands::{
-    AddCommand, ClearCommand, ClearSummary, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, ClearSummary, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 pub use experience::{Experience, State};
 pub use lifecycle::{is_eligible, LifecycleConfig};

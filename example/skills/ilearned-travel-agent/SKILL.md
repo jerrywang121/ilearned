@@ -1,6 +1,6 @@
 ---
 name: ilearned-travel-agent
-description: Use ilearned MCP tools as persistent memory for a travel-agent AI harness. Search, add, refine, promote, downgrade, or delete structured experiences under hierarchical travel topics so the agent continuously improves booking, itinerary, and support performance over time.
+description: Use ilearned MCP tools as persistent memory for a travel-agent AI harness. Search, add, refine, promote, demote, or delete structured experiences under hierarchical travel topics so the agent continuously improves booking, itinerary, and support performance over time.
 ---
 
 # ilearned Travel Agent Memory
@@ -18,7 +18,7 @@ Lightweight local-first memory of learned experiences for a travel-agent AI. Exp
 
 - ilearned binary available and MCP surface enabled (`ilearned mcp` for stdio harness, or `ilearned serve` for HTTP `/mcp`).
 - Database path configured (project-local `./.ilearned/ilearned.db` preferred; add to `.gitignore` unless shared).
-- MCP tools exposed to the agent: `search`, `add`, `modify`, `delete`, `promote`, `downgrade`, `clear`, `topics_list`, `topics_search`.
+- MCP tools exposed to the agent: `search`, `add`, `update`, `delete`, `promote`, `demote`, `clear`, `topics_list`, `topics_search`.
 
 ## Hierarchical Topics
 
@@ -63,8 +63,8 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 ## Core Workflow
 
 1. **Before acting** — Call `search` (prefer `topic` with `#` wildcard + `text` or `semantic`). Review top results. Apply high `good_count` experiences; treat high `bad_count` as warnings.
-2. **After acting** — If the outcome produced a new reusable lesson, call `add`. If an existing experience was close but incomplete, call `modify`.
-3. **Feedback loop** — On clear user or system success of an applied experience → `promote`. On clear failure or user complaint that the experience caused harm → `downgrade`. Prefer promote/downgrade over immediate delete.
+2. **After acting** — If the outcome produced a new reusable lesson, call `add`. If an existing experience was close but incomplete, call `update`.
+3. **Feedback loop** — On clear user or system success of an applied experience → `promote`. On clear failure or user complaint that the experience caused harm → `demote`. Prefer promote/demote over immediate delete.
 4. **Maintenance** — Periodically `topics_list` / `topics_search` to keep taxonomy tidy. Use `clear` only with explicit confirmation and only for obsolete whole topics.
 
 ## Rules for Lifecycle Operations
@@ -73,9 +73,9 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 - Use when no existing experience covers the scenario at useful specificity.
 - Always supply all four fields; keep each field focused and under ~300 chars when possible.
 - Choose the most specific existing topic leaf; create a new leaf only if necessary.
-- After add, note the returned `(topic, id)` for later promote/modify.
+- After add, note the returned `(topic, id)` for later promote/update.
 
-### Refine (modify)
+### Refine (update)
 - Use when an experience is directionally correct but missing a constraint, step, or check.
 - Supply only the fields that change; at least one non-blank field required.
 - Prefer refine over creating a near-duplicate.
@@ -86,14 +86,14 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 - Increases `good_count`; refreshes lifecycle.
 - Prefer promote over re-adding the same lesson.
 
-### Downgrade
+### Demote
 - Call after an experience was applied and produced a clearly negative outcome (failed booking, user complaint, policy violation, extra cost).
 - Increases `bad_count`; refreshes lifecycle.
-- If `bad_count` grows large relative to `good_count`, consider `modify` to fix or `delete` if the experience is fundamentally wrong.
+- If `bad_count` grows large relative to `good_count`, consider `update` to fix or `delete` if the experience is fundamentally wrong.
 
 ### Delete
 - Use only for experiences that are factually incorrect, superseded by a better one, or violate policy/safety.
-- Prefer `downgrade` + later review over immediate delete.
+- Prefer `demote` + later review over immediate delete.
 - Deleting a never-existing id is not-found; deleting an already-deleted id is idempotent success.
 - Always confirm the `(topic, id)` pair before calling.
 
@@ -115,8 +115,8 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 - Search before every non-trivial action.
 - Write experiences that are specific enough to be actionable and general enough to transfer.
 - Prefer high-signal, low-noise entries; one clear lesson per experience.
-- Keep topics hierarchical and consistent; refactor via modify + delete rather than proliferating near-duplicates.
-- Treat promote/downgrade as the primary feedback signal; the counts drive future ranking and trust.
+- Keep topics hierarchical and consistent; refactor via update + delete rather than proliferating near-duplicates.
+- Treat promote/demote as the primary feedback signal; the counts drive future ranking and trust.
 - Never store secrets, full PII, payment details, or raw booking references inside experiences.
 - When an experience conflicts with live policy or real-time data, the live source wins; record the conflict as a new experience if useful.
 
@@ -126,10 +126,10 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 |------|---------------|-------|
 | `search` | (optional topic/text/semantic/limit/offset/deep) | Primary retrieval |
 | `add` | topic, when, if, do, check | Returns `{added: {topic, id}}` |
-| `modify` | topic, id + ≥1 field | Returns `{modified: {topic, id}}` |
+| `update` | topic, id + ≥1 field | Returns `{modified: {topic, id}}` |
 | `delete` | topic, id | Idempotent on already-deleted |
 | `promote` | topic, id | good_count += 1 |
-| `downgrade` | topic, id | bad_count += 1 |
+| `demote` | topic, id | bad_count += 1 |
 | `clear` | confirm=true + (topic \| all=true) | Destructive |
 | `topics_list` | (optional level/limit/offset/deep) | Discover taxonomy |
 | `topics_search` | query (+ optional level/…) | Substring or `#` pattern |

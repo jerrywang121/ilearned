@@ -8,11 +8,11 @@ ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
                   [--limit N] [--offset N] [--deep] [--json]
 ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
 ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep] [--json]
-ilearned modify --topic TOPIC --id ID [--when TEXT] [--if TEXT]
+ilearned update --topic TOPIC --id ID [--when TEXT] [--if TEXT]
                   [--do TEXT] [--check TEXT] [--json]
 ilearned delete --topic TOPIC --id ID [--yes] [--json]
 ilearned promote --topic TOPIC --id ID [--json]
-ilearned downgrade --topic TOPIC --id ID [--json]
+ilearned demote --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
@@ -93,9 +93,9 @@ ilearned mcp
   OpenAI-compatible provider and `search --semantic` works; otherwise
   semantic queries exit 3.
 - In JSON mode, `add` returns `{"added":{"topic":"...","id":"..."}}`,
-  `modify` returns `{"modified":{"topic":"...","id":"..."}}`, and
+  `update` returns `{"modified":{"topic":"...","id":"..."}}`, and
   `delete` returns `{"deleted":{"topic":"...","id":"..."}}` to confirm
-  the impacted record. `promote`/`downgrade` return
+  the impacted record. `promote`/`demote` return
   `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M}}`.
   Human output adds only a short action label. `search` prints a JSON array in
   `--json` mode.
@@ -104,7 +104,7 @@ ilearned mcp
   `offset` return `[]`. `text` + `semantic` together fuse both rankings
   with RRF (`k=60`); a semantic query without a provider (or with a
   failing provider) exits 3 instead of silently degrading to text-only.
-- `modify` requires at least one non-blank field of
+- `update` requires at least one non-blank field of
   `--when/--if/--do/--check` (blank-only values are ignored, so all-blank
   is rejected).
 - Destructive `delete`/`clear` require explicit confirmation: `--yes` or an

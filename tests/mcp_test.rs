@@ -173,12 +173,12 @@ async fn tool_list_has_nine_tools() {
             "add",
             "clear",
             "delete",
-            "downgrade",
-            "modify",
+            "demote",
             "promote",
             "search",
             "topics_list",
-            "topics_search"
+            "topics_search",
+            "update"
         ]
     );
 }
@@ -217,7 +217,7 @@ async fn mutation_tools_return_enveloped_results() {
 
     let modified = tool_json(
         &mcp.call(
-            "modify",
+            "update",
             serde_json::json!({"topic":"mcp","id":id,"when":"updated"}),
         )
         .await,
@@ -239,7 +239,7 @@ async fn mutation_tools_return_enveloped_results() {
     );
 
     let downgraded = tool_json(
-        &mcp.call("downgrade", serde_json::json!({"topic":"mcp","id":id}))
+        &mcp.call("demote", serde_json::json!({"topic":"mcp","id":id}))
             .await,
     );
     assert_eq!(
@@ -286,13 +286,13 @@ async fn typed_errors_propagate() {
     let mut mcp = spawn_client().await;
     let resp = mcp
         .call(
-            "modify",
+            "update",
             serde_json::json!({"topic":"no","id":"such","when":"x"}),
         )
         .await;
     let text = serde_json::to_string(&resp).unwrap();
     assert!(
         text.to_lowercase().contains("not found"),
-        "missing modify must surface not-found: {resp}"
+        "missing update must surface not-found: {resp}"
     );
 }

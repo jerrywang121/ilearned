@@ -123,10 +123,10 @@ fn main() {
         }
         cmd @ (Commands::Add(_)
         | Commands::Search(_)
-        | Commands::Modify(_)
+        | Commands::Update(_)
         | Commands::Delete(_)
         | Commands::Promote(_)
-        | Commands::Downgrade(_)
+        | Commands::Demote(_)
         | Commands::Topic(_)
         | Commands::Clear(_)) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {

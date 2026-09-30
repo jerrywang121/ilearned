@@ -12,7 +12,7 @@ use rmcp::{tool, tool_handler, tool_router};
 use serde::Deserialize;
 
 use crate::domain::commands::{
-    AddCommand, ClearCommand, FeedbackCommand, ModifyCommand, SearchQuery, TopicQuery,
+    AddCommand, ClearCommand, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
 use crate::domain::experience::Experience;
 use crate::error::AppError;
@@ -84,10 +84,10 @@ pub struct AddArgs {
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
-pub struct ModifyArgs {
-    #[schemars(description = "Topic of the record to modify")]
+pub struct UpdateArgs {
+    #[schemars(description = "Topic of the record to update")]
     pub topic: String,
-    #[schemars(description = "Id of the record to modify")]
+    #[schemars(description = "Id of the record to update")]
     pub id: String,
     #[schemars(description = "New scenario text (blank values ignored)")]
     pub when: Option<String>,
@@ -220,15 +220,15 @@ impl IlearnedTools {
     }
 
     #[tool(
-        description = "Modify an existing experience (at least one non-blank field required; blank values ignored)"
+        description = "Update an existing experience (at least one non-blank field required; blank values ignored)"
     )]
-    fn modify(
+    fn update(
         &self,
-        Parameters(a): Parameters<ModifyArgs>,
+        Parameters(a): Parameters<UpdateArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let e = self
             .svc
-            .modify(ModifyCommand {
+            .update(UpdateCommand {
                 topic: a.topic,
                 id: a.id,
                 when_text: a.when,
@@ -277,14 +277,14 @@ impl IlearnedTools {
         }))
     }
 
-    #[tool(description = "Downgrade an experience (increments bad_count)")]
-    fn downgrade(
+    #[tool(description = "Demote an experience (increments bad_count)")]
+    fn demote(
         &self,
         Parameters(a): Parameters<FeedbackArgs>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let e = self
             .svc
-            .downgrade(&FeedbackCommand {
+            .demote(&FeedbackCommand {
                 topic: a.topic,
                 id: a.id,
             })
@@ -372,7 +372,7 @@ impl IlearnedTools {
 
 #[tool_handler(
     name = "ilearned",
-    instructions = "Local-first AI agent memory: a live rule book of learned experiences (when/if/do/check) grouped by hierarchical topic (e.g. travel/hotel/checkout; search accepts # multi-level wildcard). Use `search` to find applicable rules, `add` to record new lessons, `modify` to refine them, `promote`/`downgrade` for feedback, `delete`/`clear` for removal (destructive actions need `confirm=true`), `topics_list`/`topics_search` to browse topics."
+    instructions = "Local-first AI agent memory: a live rule book of learned experiences (when/if/do/check) grouped by hierarchical topic (e.g. travel/hotel/checkout; search accepts # multi-level wildcard). Use `search` to find applicable rules, `add` to record new lessons, `update` to refine them, `promote`/`demote` for feedback, `delete`/`clear` for removal (destructive actions need `confirm=true`), `topics_list`/`topics_search` to browse topics."
 )]
 impl ServerHandler for IlearnedTools {}
 
