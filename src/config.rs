@@ -169,6 +169,10 @@ pub struct FileConfig {
     pub forget_days: Option<u64>,
     #[serde(default)]
     pub retention_days: Option<u64>,
+    /// Demote auto-delete threshold (0.0 disables, 1.0 deletes on first
+    /// demote). Must be within `0.0..=1.0`.
+    #[serde(default)]
+    pub auto_delete_threshold: Option<f64>,
     /// Embedding provider settings (`[embedding]` table).
     #[serde(default)]
     pub embedding: Option<FileEmbeddingConfig>,
@@ -221,6 +225,7 @@ impl FileConfig {
                 active_days: o.active_days.or(b.active_days),
                 forget_days: o.forget_days.or(b.forget_days),
                 retention_days: o.retention_days.or(b.retention_days),
+                auto_delete_threshold: o.auto_delete_threshold.or(b.auto_delete_threshold),
                 embedding: FileEmbeddingConfig::merge(b.embedding, o.embedding),
             }),
         }
@@ -270,10 +275,11 @@ impl FileConfig {
     /// runtime defaults in a ready-to-edit TOML file.
     pub fn default_config_toml() -> String {
         format!(
-            "# ilearned configuration\n\n# Database path (optional).\n# db = \"./.ilearned/ilearned.db\"\n\nbind = \"127.0.0.1:8787\"\nactive_days = {}\nforget_days = {}\nretention_days = {}\n\n[embedding]\n# endpoint = \"http://localhost:11434/v1\"\n# model = \"nomic-embed-text\"\n# api_key = \"your-api-key\"\ndims = {}\ntimeout_secs = {}\n",
+            "# ilearned configuration\n\n# Database path (optional).\n# db = \"./.ilearned/ilearned.db\"\n\nbind = \"127.0.0.1:8787\"\nactive_days = {}\nforget_days = {}\nretention_days = {}\nauto_delete_threshold = {}\n\n[embedding]\n# endpoint = \"http://localhost:11434/v1\"\n# model = \"nomic-embed-text\"\n# api_key = \"your-api-key\"\ndims = {}\ntimeout_secs = {}\n",
             LifecycleConfig::default().active_period_days,
             LifecycleConfig::default().forget_period_days,
             LifecycleConfig::default().retention_days,
+            LifecycleConfig::default().auto_delete_threshold,
             EmbeddingConfig::DEFAULT_DIMS,
             EmbeddingConfig::DEFAULT_TIMEOUT_SECS,
         )
@@ -391,6 +397,7 @@ pub struct ResolvedConfig {
     pub active_days: u64,
     pub forget_days: u64,
     pub retention_days: u64,
+    pub auto_delete_threshold: f64,
     pub embedding: Option<ResolvedEmbeddingConfig>,
 }
 
@@ -407,6 +414,7 @@ impl ResolvedConfig {
             active_days: lifecycle.active_period_days,
             forget_days: lifecycle.forget_period_days,
             retention_days: lifecycle.retention_days,
+            auto_delete_threshold: lifecycle.auto_delete_threshold,
             embedding,
         })
     }
@@ -514,6 +522,14 @@ fn resolve_lifecycle(
 ) -> Result<LifecycleConfig, AppError> {
     let file_days = |pick: fn(&FileConfig) -> Option<u64>| file.and_then(pick);
     let defaults = LifecycleConfig::default();
+    let auto_delete_threshold = match file.and_then(|f| f.auto_delete_threshold) {
+        Some(t) if !(0.0..=1.0).contains(&t) => {
+            return Err(AppError::InvalidInput(format!(
+                "auto_delete_threshold must be within 0.0..=1.0, got {t}"
+            )));
+        }
+        t => t,
+    };
     Ok(LifecycleConfig {
         active_period_days: resolve_setting(
             active_days,
@@ -533,6 +549,7 @@ fn resolve_lifecycle(
             file_days(|f| f.retention_days),
         )?
         .unwrap_or(defaults.retention_days),
+        auto_delete_threshold: auto_delete_threshold.unwrap_or(defaults.auto_delete_threshold),
     })
 }
 

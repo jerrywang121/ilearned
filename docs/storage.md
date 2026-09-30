@@ -30,6 +30,10 @@
   `soft_delete()`/`clear()` set `state='deleted'` + fresh `updated_at` +
   retention start. `clear` skips already-deleted rows and returns the number
   of newly touched items plus the number of unique topics containing them.
+  `demote` auto-delete reuses `soft_delete()` when the feedback score
+  `good_count / (good_count + bad_count)` drops strictly below
+  `auto_delete_threshold` (default `0.3`, TOML-only), so the retention
+  clock starts and purge applies as with explicit deletes.
 - Lifecycle (`reconcile_before_op`, single `BEGIN IMMEDIATE` transaction):
   reconcile before every op (strict `>`: `>60d`→inactive within the
   forget window, `>120d`→forgotten + retention start via `COALESCE` —

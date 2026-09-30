@@ -67,6 +67,7 @@ bind = "127.0.0.1:9999"
 active_days = 10
 forget_days = 20
 retention_days = 30
+auto_delete_threshold = 0.5
 [embedding]
 endpoint = "http://localhost:11434/v1"
 model = "nomic-embed"
@@ -78,6 +79,7 @@ timeout_secs = 5
     .expect("valid file config parses");
     assert_eq!(fc.db, Some(PathBuf::from("/tmp/x.db")));
     assert_eq!(fc.active_days, Some(10));
+    assert_eq!(fc.auto_delete_threshold, Some(0.5));
     let emb = fc.embedding.expect("embedding parses");
     assert_eq!(emb.model.as_deref(), Some("nomic-embed"));
     assert_eq!(emb.dims, Some(768));
@@ -87,6 +89,34 @@ timeout_secs = 5
 fn file_config_rejects_unknown_keys() {
     let res: Result<FileConfig, _> = toml::from_str(r#"bogus_key = 1"#);
     assert!(res.is_err(), "unknown keys must be rejected");
+}
+
+#[test]
+fn auto_delete_threshold_out_of_range_is_rejected() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = dir.path().join("bad-threshold.toml");
+    std::fs::write(&config, "auto_delete_threshold = 1.5\n").unwrap();
+    let out = isolated_command(dir.path())
+        .args(["--config-file", config.to_str().unwrap(), "config", "show"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "out-of-range threshold must fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("auto_delete_threshold"),
+        "stderr should name the setting: {stderr}"
+    );
+}
+
+#[test]
+fn auto_delete_threshold_merges_per_field() {
+    let global: FileConfig = toml::from_str("auto_delete_threshold = 0.1").unwrap();
+    let local: FileConfig = toml::from_str("auto_delete_threshold = 0.4").unwrap();
+    let merged = FileConfig::merge(Some(global), Some(local)).expect("merge yields config");
+    assert_eq!(merged.auto_delete_threshold, Some(0.4));
+    let global_only: FileConfig = toml::from_str("auto_delete_threshold = 0.1").unwrap();
+    let merged_keep = FileConfig::merge(Some(global_only), None).expect("merge yields config");
+    assert_eq!(merged_keep.auto_delete_threshold, Some(0.1));
 }
 
 #[test]
@@ -666,6 +696,7 @@ fn config_show_works_before_any_database_or_config_file_exists() {
     assert!(value["config"]["db"].is_null());
     assert_eq!(value["config"]["bind"], "127.0.0.1:8787");
     assert_eq!(value["config"]["active_days"], 60);
+    assert_eq!(value["config"]["auto_delete_threshold"], 0.3);
     assert!(value["config_files"].as_array().unwrap().is_empty());
 }
 
@@ -723,6 +754,7 @@ fn config_init_generates_local_defaults_without_packaged_files() {
     assert_eq!(parsed.active_days, Some(60));
     assert_eq!(parsed.forget_days, Some(120));
     assert_eq!(parsed.retention_days, Some(60));
+    assert_eq!(parsed.auto_delete_threshold, Some(0.3));
     assert!(text.contains("[embedding]"));
 }
 

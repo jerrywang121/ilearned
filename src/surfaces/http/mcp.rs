@@ -273,11 +273,14 @@ impl IlearnedTools {
                 "id": e.id,
                 "good_count": e.good_count,
                 "bad_count": e.bad_count,
+                "state": e.state_str(),
             }
         }))
     }
 
-    #[tool(description = "Demote an experience (increments bad_count)")]
+    #[tool(
+        description = "Demote an experience (increments bad_count; auto-deletes when the good ratio drops below the configured threshold)"
+    )]
     fn demote(
         &self,
         Parameters(a): Parameters<FeedbackArgs>,
@@ -295,6 +298,7 @@ impl IlearnedTools {
                 "id": e.id,
                 "good_count": e.good_count,
                 "bad_count": e.bad_count,
+                "state": e.state_str(),
             }
         }))
     }

@@ -31,7 +31,7 @@ REST, web, and HTTP MCP do not expose configuration controls.
   | `GET` | `/experiences/:topic/:id/edit` | Edit form |
   | `POST` | `/experiences/:topic/:id` | Edit submit; non-blank subset of `when_text/if_text/do_text/check`; empty → 400 |
   | `POST` | `/experiences/:topic/:id/promote` | Feedback (`good_count+1`, restores to active), redirects to detail |
-  | `POST` | `/experiences/:topic/:id/demote` | Feedback (`bad_count+1`, restores to active), redirects to detail |
+  | `POST` | `/experiences/:topic/:id/demote` | Feedback (`bad_count+1`, restores to active; auto-deletes below `auto_delete_threshold`), redirects to detail, or to the list when auto-deleted |
   | `POST` | `/experiences/:topic/:id/delete` | Requires `confirm=yes` field, else 400; redirects to `/` |
   | `GET/POST` | `/clear` | Requires `confirm=yes` plus a topic or `all=true`, else 400 |
   | `GET` | `/topics` | Topic list/search page; query `q,level,deep,limit,offset`; linked from `/` |

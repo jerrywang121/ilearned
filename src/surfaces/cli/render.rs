@@ -48,9 +48,15 @@ pub fn render_feedback(e: &Experience, json: bool, action: &str) -> String {
                 "id": e.id,
                 "good_count": e.good_count,
                 "bad_count": e.bad_count,
+                "state": state_str(e),
             }
         })
         .to_string()
+    } else if matches!(e.state, crate::domain::State::Deleted) {
+        format!(
+            "{action} ({}/{}) good={} bad={} [auto-deleted]",
+            e.topic, e.id, e.good_count, e.bad_count
+        )
     } else {
         format!(
             "{action} ({}/{}) good={} bad={}",

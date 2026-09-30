@@ -394,3 +394,132 @@ fn semantic_search_respects_middle_hash() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].topic, "travel/hotel/checkout");
 }
+
+fn svc_with_threshold(threshold: f64) -> (tempfile::TempDir, MemoryService<SqliteRepo>) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = SqliteRepo::open(&dir.path().join("t.db")).unwrap();
+    let s = MemoryService::new(
+        repo,
+        LifecycleConfig {
+            auto_delete_threshold: threshold,
+            ..LifecycleConfig::default()
+        },
+    );
+    (dir, s)
+}
+
+#[test]
+fn demote_below_threshold_auto_deletes() {
+    let (_d, s) = svc_with_threshold(0.2);
+    // add sets good=1, bad=0. Two demotes: score 1/2=0.5 (survives), then
+    // 1/3≈0.333 (survives), third demote: 1/4=0.25 (survives), fourth:
+    // 1/5=0.2 == threshold (survives, strict <), fifth: 1/6≈0.167 < 0.2
+    // (auto-deleted).
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    for _ in 0..4 {
+        let d = s.demote(&f).unwrap();
+        assert_eq!(d.state, State::Active);
+    }
+    assert_eq!(s.demote(&f).unwrap().state, State::Deleted);
+    // Auto-deleted reads as NotFound for both get and demote (demote on a
+    // deleted record is NotFound, matching existing feedback semantics).
+    assert!(matches!(
+        s.get(&e.topic, &e.id),
+        Err(ilearned::AppError::NotFound { .. })
+    ));
+    assert!(matches!(
+        s.demote(&f),
+        Err(ilearned::AppError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn demote_score_equal_threshold_survives() {
+    let (_d, s) = svc_with_threshold(0.5);
+    // good=1: after one demote score = 1/2 = 0.5 == threshold -> survives.
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    let d = s.demote(&f).unwrap();
+    assert_eq!(d.state, State::Active);
+    assert_eq!(d.bad_count, 1);
+}
+
+#[test]
+fn demote_default_threshold_0_3() {
+    let (_d, s) = svc();
+    // Default 0.3: good=1, scores 1/2=0.5 and 1/3≈0.333 survive; 1/4=0.25
+    // < 0.3 auto-deletes on the third demote.
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    for _ in 0..2 {
+        let d = s.demote(&f).unwrap();
+        assert_eq!(d.state, State::Active);
+    }
+    let d = s.demote(&f).unwrap();
+    assert_eq!(d.state, State::Deleted);
+    assert_eq!(d.bad_count, 3);
+}
+
+#[test]
+fn demote_threshold_zero_never_auto_deletes() {
+    let (_d, s) = svc_with_threshold(0.0);
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    for _ in 0..10 {
+        let d = s.demote(&f).unwrap();
+        assert_eq!(d.state, State::Active);
+    }
+}
+
+#[test]
+fn demote_threshold_one_auto_deletes_on_first_demote() {
+    let (_d, s) = svc_with_threshold(1.0);
+    // good=1, bad=0 -> after demote score = 1/2 = 0.5 < 1.0 -> deleted.
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    let d = s.demote(&f).unwrap();
+    assert_eq!(d.state, State::Deleted);
+    assert_eq!(d.bad_count, 1);
+}
+
+#[test]
+fn demote_auto_delete_starts_retention_clock() {
+    let (_d, s) = svc_with_threshold(1.0);
+    let e = s.add(add_cmd("rust")).unwrap();
+    let f = FeedbackCommand {
+        topic: e.topic.clone(),
+        id: e.id.clone(),
+    };
+    s.demote(&f).unwrap();
+    let repo = s.repo();
+    let stored = repo.get(&e.topic, &e.id).unwrap().unwrap();
+    assert_eq!(stored.state, State::Deleted);
+    let retention = repo
+        .conn()
+        .query_row(
+            "SELECT retention_started_at FROM experiences WHERE topic=?1 AND id=?2",
+            rusqlite::params![e.topic, e.id],
+            |row| row.get::<_, Option<i64>>("retention_started_at"),
+        )
+        .unwrap();
+    assert!(
+        retention.is_some(),
+        "retention clock must start on auto-delete"
+    );
+}

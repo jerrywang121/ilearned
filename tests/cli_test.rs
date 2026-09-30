@@ -353,7 +353,7 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
     assert_eq!(
         promoted,
         serde_json::json!({
-            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 0}
+            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 0, "state": "active"}
         })
     );
 
@@ -375,7 +375,7 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
     assert_eq!(
         downgraded,
         serde_json::json!({
-            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 1}
+            "modified": {"topic": "t", "id": id, "good_count": 2, "bad_count": 1, "state": "active"}
         })
     );
 
@@ -399,6 +399,77 @@ fn mutation_json_outputs_only_identity_or_feedback_counts() {
         deleted,
         serde_json::json!({"deleted": {"topic": "t", "id": id}})
     );
+}
+
+#[test]
+fn demote_auto_delete_reports_state_and_hides_from_search() {
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "db = {:?}\nauto_delete_threshold = 1.0\n",
+            db_path.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let db = config.to_string_lossy().to_string();
+
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "add",
+            "--json",
+            "--topic",
+            "t",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["added"]["id"].as_str().unwrap().to_string();
+
+    // Threshold 1.0: first demote (score 1/2 < 1.0) auto-deletes.
+    let out = Command::new(bin())
+        .args([
+            "--config-file",
+            &db,
+            "demote",
+            "--json",
+            "--topic",
+            "t",
+            "--id",
+            &id,
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!({
+            "modified": {"topic": "t", "id": id, "good_count": 1, "bad_count": 1, "state": "deleted"}
+        })
+    );
+
+    // Auto-deleted records are hidden from search.
+    let out = Command::new(bin())
+        .args(["--config-file", &db, "search", "--json", "--topic", "t"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 0);
 }
 
 #[test]

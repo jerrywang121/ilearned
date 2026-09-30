@@ -261,6 +261,14 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             }
         };
         e.bad_count += 1;
+        // Auto-delete: score = good / (good + bad); strict `<` so an exact
+        // tie with the threshold survives. Denominator >= 1 after the bump.
+        let score = e.good_count as f64 / (e.good_count + e.bad_count) as f64;
+        if score < self.lifecycle.auto_delete_threshold {
+            self.repo.soft_delete(&e.topic, &e.id, Utc::now())?;
+            e.state = State::Deleted;
+            return Ok(e);
+        }
         let e = self.restore(e);
         self.repo.update(&e)?;
         Ok(e)

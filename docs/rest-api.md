@@ -8,7 +8,7 @@
 | `PATCH` | `/api/v1/experiences/:topic/:id` | Update selected fields (≥1 required) | 200 record |
 | `DELETE` | `/api/v1/experiences/:topic/:id` | Delete one: never-existing id → 404; already-deleted → idempotent 204 | 204, no body |
 | `POST` | `/api/v1/experiences/:topic/:id/promote` | Positive feedback (`good_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
-| `POST` | `/api/v1/experiences/:topic/:id/demote` | Negative feedback (`bad_count+1`; restores `inactive`/`forgotten` to active) | 200 record |
+| `POST` | `/api/v1/experiences/:topic/:id/demote` | Negative feedback (`bad_count+1`; restores `inactive`/`forgotten` to active; auto-deletes when the feedback score drops below `auto_delete_threshold`, returning the record with `state:"deleted"`) | 200 record |
 | `DELETE` | `/api/v1/experiences` | Clear by topic or all; requires `?confirm=true` plus exactly one of `?topic=X` / `?all=true` | 200 `{"cleared":{"num_of_topics":N,"num_of_items":M}}` |
 | `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`); no `q` = list, with `q` = search | 200 array of strings |
 
