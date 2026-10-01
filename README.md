@@ -38,7 +38,7 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 ### npm
 
 ```bash
-npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned@0.1.0
+npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned
 # or run without installing
 npx @jerrywang121/ilearned --help
 ```

@@ -36,6 +36,10 @@ REST, web, and HTTP MCP do not expose configuration controls.
   | `GET/POST` | `/clear` | Requires `confirm=yes` plus a topic or `all=true`, else 400 |
   | `GET` | `/topics` | Topic list/search page; query `q,level,deep,limit,offset`; linked from `/` |
 
+- Since topics may contain `/`, links and redirects percent-encode the topic as
+  one path segment (for example, `jump/down/up` becomes
+  `jump%2Fdown%2Fup`). Clients constructing detail or action URLs should encode
+  topic slashes the same way.
 - Askama auto-escaping is ON for all templates; error pages render the
   `AppError` message with the mapped status (400/404/503/500).
 - Co-hosted surfaces: REST under `/api/v1/...` (see `rest-api.md`),

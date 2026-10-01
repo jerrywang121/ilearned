@@ -135,6 +135,44 @@ async fn pages_render_and_escape() {
 }
 
 #[tokio::test]
+async fn nested_topic_add_redirect_and_link_open_detail() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+
+    let response = client
+        .post(srv.url("/experiences"))
+        .form(&[
+            ("topic", "jump/down/up"),
+            ("when_text", "w"),
+            ("if_text", "i"),
+            ("do_text", "d"),
+            ("check", "c"),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(location.starts_with("/experiences/jump%2Fdown%2Fup/"));
+
+    let detail = client.get(srv.url(&location)).send().await.unwrap();
+    assert_eq!(detail.status(), reqwest::StatusCode::OK);
+
+    let index = client.get(srv.url("/")).send().await.unwrap();
+    let index = index.text().await.unwrap();
+    assert!(index.contains(&format!("href=\"{location}\"")));
+}
+
+#[tokio::test]
 async fn topics_page_lists_and_escapes() {
     let srv = spawn_server().await;
     let client = reqwest::Client::new();

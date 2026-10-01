@@ -81,7 +81,7 @@ struct BaseTemplate {
 <p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a></p>
 <ul>
 {% for e in results %}
-<li><a href="/experiences/{{ e.topic }}/{{ e.id }}">{{ e.when_text }} — {{ e.check_text }}</a>
+<li><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">{{ e.when_text }} — {{ e.check_text }}</a>
 <span class="meta">{{ e.topic }} · good {{ e.good_count }} · bad {{ e.bad_count }} · {{ e.state_str() }}</span></li>
 {% endfor %}
 </ul>
@@ -111,10 +111,10 @@ struct SearchTemplate {
 <dt>check</dt><dd>{{ e.check_text }}</dd>
 </dl>
 <p>
-<a href="/experiences/{{ e.topic }}/{{ e.id }}/edit">edit</a>
-<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/promote" style="display:inline"><button>promote</button></form>
-<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/demote" style="display:inline"><button>demote</button></form>
-<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button>delete</button></form>
+<a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit">edit</a>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote" style="display:inline"><button>promote</button></form>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote" style="display:inline"><button>demote</button></form>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete" style="display:inline"><input type="hidden" name="confirm" value="yes"><button>delete</button></form>
 </p>
 <p><a href="/">back</a></p>
 </body></html>"#,
@@ -152,14 +152,14 @@ struct AddTemplate;
 <style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}</style>
 </head><body>
 <h1>ilearned · edit {{ e.topic }}/{{ e.id }}</h1>
-<form method="post" action="/experiences/{{ e.topic }}/{{ e.id }}">
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">
 <label>when <input name="when_text" value="{{ e.when_text }}"></label>
 <label>if <input name="if_text" value="{{ e.if_text }}"></label>
 <label>do <input name="do_text" value="{{ e.do_text }}"></label>
 <label>check <input name="check" value="{{ e.check_text }}"></label>
 <button type="submit">Save</button>
 </form>
-<p><a href="/experiences/{{ e.topic }}/{{ e.id }}">back</a></p>
+<p><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">back</a></p>
 </body></html>"#,
     ext = "html"
 )]
@@ -272,6 +272,10 @@ fn req(o: Option<String>, name: &str) -> Result<String, AppError> {
         .ok_or_else(|| AppError::InvalidInput(format!("{name} is required")))
 }
 
+fn experience_path(topic: &str, id: &str) -> String {
+    format!("/experiences/{}/{}", topic.replace('/', "%2F"), id)
+}
+
 pub async fn index<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<IndexParams>,
@@ -328,7 +332,7 @@ async fn add_submit<R: ExperienceRepo + VectorStore>(
         check_text: req(f.check, "check").map_err(|e| WebErr(Box::new(svc_err(e))))?,
     };
     let e = svc.add(cmd).map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Redirect::to(&format!("/experiences/{}/{}", e.topic, e.id)))
+    Ok(Redirect::to(&experience_path(&e.topic, &e.id)))
 }
 
 async fn edit_form<R: ExperienceRepo + VectorStore + 'static>(
@@ -366,7 +370,7 @@ async fn edit_submit<R: ExperienceRepo + VectorStore>(
         ))));
     }
     svc.update(cmd).map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
+    Ok(Redirect::to(&experience_path(&topic, &id)))
 }
 
 async fn promote_action<R: ExperienceRepo + VectorStore>(
@@ -378,7 +382,7 @@ async fn promote_action<R: ExperienceRepo + VectorStore>(
         id: id.clone(),
     })
     .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
+    Ok(Redirect::to(&experience_path(&topic, &id)))
 }
 
 async fn demote_action<R: ExperienceRepo + VectorStore>(
@@ -395,7 +399,7 @@ async fn demote_action<R: ExperienceRepo + VectorStore>(
     if matches!(e.state, crate::domain::State::Deleted) {
         return Ok(Redirect::to("/"));
     }
-    Ok(Redirect::to(&format!("/experiences/{topic}/{id}")))
+    Ok(Redirect::to(&experience_path(&topic, &id)))
 }
 
 async fn delete_action<R: ExperienceRepo + VectorStore>(
