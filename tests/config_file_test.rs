@@ -869,6 +869,50 @@ fn config_init_refuses_to_overwrite_and_reports_existing_path() {
     );
 }
 
+#[test]
+fn config_init_force_overwrites_existing_file_with_long_and_short_flags() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let target = dir.path().join(".ilearned/config.toml");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::fs::write(&target, "db = \"keep-me.db\"\n").unwrap();
+
+    let out = isolated_command(dir.path())
+        .args(["config", "init", "--force"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "./.ilearned/config.toml"
+    );
+    let text = std::fs::read_to_string(&target).unwrap();
+    assert_ne!(text, "db = \"keep-me.db\"\n");
+    let parsed: FileConfig = toml::from_str(&text).expect("forced config should be valid TOML");
+    assert_eq!(
+        parsed.db.as_deref(),
+        Some(Path::new("./.ilearned/ilearned.db"))
+    );
+
+    std::fs::write(&target, "db = \"replace-again.db\"\n").unwrap();
+    let out = isolated_command(dir.path())
+        .args(["config", "init", "-f"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_ne!(
+        std::fs::read_to_string(target).unwrap(),
+        "db = \"replace-again.db\"\n"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn config_init_creates_private_config_file() {

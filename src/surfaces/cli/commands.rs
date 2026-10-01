@@ -250,6 +250,9 @@ pub struct ConfigInitArgs {
     /// Write the global configuration instead of the project-local one.
     #[arg(short = 'g', long = "global")]
     pub global: bool,
+    /// Overwrite an existing configuration file.
+    #[arg(short = 'f', long = "force")]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Args)]

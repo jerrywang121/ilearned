@@ -44,7 +44,7 @@ fn run_config_command(
             } else {
                 FileConfig::local_db_fallback()
             };
-            FileConfig::init(&path, &db_path.to_string_lossy())?;
+            FileConfig::init(&path, &db_path.to_string_lossy(), args.force)?;
             Ok(path.display().to_string())
         }
     }

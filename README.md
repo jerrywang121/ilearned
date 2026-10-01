@@ -122,13 +122,13 @@ ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
 ilearned config show
-ilearned config init [-g]
+ilearned config init [-g] [--force | -f]
 ilearned serve [--bind ADDR]
 ilearned mcp
 ```
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`. `delete` on a never-existing `(topic, id)` is not-found (exit 1); deleting an already-deleted record is idempotent success.
-- `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file.
+- `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file unless `--force` (or `-f`) is supplied.
 - Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `update` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}` (`state` is `"deleted"` when a demote crossed the auto-delete threshold); and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label (demote appends `[auto-deleted]` when the record was auto-deleted). `config init` prints only the generated file path.
 - Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
 - `update` needs at least one non-blank field (blank-only values are ignored).

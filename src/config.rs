@@ -287,10 +287,11 @@ impl FileConfig {
         )
     }
 
-    /// Create a generated configuration file without overwriting an existing
-    /// file. The target's parent directory is created when necessary.
-    /// `db_path` is written as the active `db` value in the generated file.
-    pub fn init(path: &Path, db_path: &str) -> Result<(), AppError> {
+    /// Create a generated configuration file, overwriting an existing file
+    /// only when `force` is true. The target's parent directory is created when
+    /// necessary. `db_path` is written as the active `db` value in the generated
+    /// file.
+    pub fn init(path: &Path, db_path: &str, force: bool) -> Result<(), AppError> {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -303,12 +304,17 @@ impl FileConfig {
             })?;
         }
         let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
+        options.write(true);
+        if force {
+            options.create(true).truncate(true);
+        } else {
+            options.create_new(true);
+        }
         #[cfg(unix)]
         options.mode(0o600);
         let mut file = match options.open(path) {
             Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && !force => {
                 return Err(AppError::InvalidInput(format!(
                     "config file already exists: {}",
                     path.display()

@@ -17,7 +17,7 @@ ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
 ilearned config show
-ilearned config init [-g]
+ilearned config init [-g] [--force | -f]
 ilearned serve [--bind ADDR]
 ilearned mcp
 ```
@@ -44,9 +44,10 @@ ilearned mcp
   (`$XDG_DATA_HOME/ilearned/ilearned.db`, falling back to
   `~/.local/share/ilearned/ilearned.db`; the command fails when neither
   `XDG_DATA_HOME` nor `HOME` is set). Parent directories are created, new
-  files use owner-only permissions where supported, but an existing target is
-  never overwritten and the command fails while reporting its path. On success
-  it prints only the generated path.
+  files use owner-only permissions where supported, and an existing target is
+  not overwritten unless `--force` (or `-f`) is supplied. Without force the
+  command fails while reporting the existing path. On success it prints only
+  the generated path.
 - Topic form: hierarchical, e.g. `travel/hotel/checkout`; each `/`-separated
   segment must match `[a-z0-9_-]` (lowercase letters, digits, hyphen,
   underscore) — no empty segments, no uppercase, dots, or spaces. `#` is
