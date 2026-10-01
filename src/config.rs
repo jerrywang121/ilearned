@@ -270,12 +270,14 @@ impl FileConfig {
 
     /// Generate the default configuration directly from the executable.
     ///
-    /// The database and provider credentials remain commented because their
-    /// values are installation-specific; the remaining settings document the
-    /// runtime defaults in a ready-to-edit TOML file.
-    pub fn default_config_toml() -> String {
+    /// `db_path` is written as the active `db` value (uncommented); provider
+    /// credentials remain commented because their values are
+    /// installation-specific. The remaining settings document the runtime
+    /// defaults in a ready-to-edit TOML file.
+    pub fn default_config_toml(db_path: &str) -> String {
+        let db_value = toml::Value::String(db_path.to_string()).to_string();
         format!(
-            "# ilearned configuration\n\n# Database path (optional).\n# db = \"./.ilearned/ilearned.db\"\n\nbind = \"127.0.0.1:8787\"\nactive_days = {}\nforget_days = {}\nretention_days = {}\nauto_delete_threshold = {}\n\n[embedding]\n# endpoint = \"http://localhost:11434/v1\"\n# model = \"nomic-embed-text\"\n# api_key = \"your-api-key\"\ndims = {}\ntimeout_secs = {}\n",
+            "# ilearned configuration\n\n# Database path (optional).\ndb = {db_value}\n\nbind = \"127.0.0.1:8787\"\nactive_days = {}\nforget_days = {}\nretention_days = {}\nauto_delete_threshold = {}\n\n[embedding]\n# endpoint = \"http://localhost:11434/v1\"\n# model = \"nomic-embed-text\"\n# api_key = \"your-api-key\"\ndims = {}\ntimeout_secs = {}\n",
             LifecycleConfig::default().active_period_days,
             LifecycleConfig::default().forget_period_days,
             LifecycleConfig::default().retention_days,
@@ -287,7 +289,8 @@ impl FileConfig {
 
     /// Create a generated configuration file without overwriting an existing
     /// file. The target's parent directory is created when necessary.
-    pub fn init(path: &Path) -> Result<(), AppError> {
+    /// `db_path` is written as the active `db` value in the generated file.
+    pub fn init(path: &Path, db_path: &str) -> Result<(), AppError> {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -318,7 +321,7 @@ impl FileConfig {
                 )))
             }
         };
-        file.write_all(Self::default_config_toml().as_bytes())
+        file.write_all(Self::default_config_toml(db_path).as_bytes())
             .map_err(|e| {
                 AppError::Storage(format!("cannot write config file {}: {e}", path.display()))
             })

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 
@@ -750,12 +750,24 @@ fn config_init_generates_local_defaults_without_packaged_files() {
     );
     let text = std::fs::read_to_string(&target).expect("local config should be created");
     let parsed: FileConfig = toml::from_str(&text).expect("generated config should be valid TOML");
+    assert_eq!(
+        parsed.db.as_deref(),
+        Some(Path::new("./.ilearned/ilearned.db"))
+    );
     assert_eq!(parsed.bind.as_deref(), Some("127.0.0.1:8787"));
     assert_eq!(parsed.active_days, Some(60));
     assert_eq!(parsed.forget_days, Some(120));
     assert_eq!(parsed.retention_days, Some(60));
     assert_eq!(parsed.auto_delete_threshold, Some(0.3));
     assert!(text.contains("[embedding]"));
+    assert!(
+        text.contains("db = \"./.ilearned/ilearned.db\""),
+        "db line should be uncommented: {text}"
+    );
+    assert!(
+        !text.contains("# db ="),
+        "db line must not be commented: {text}"
+    );
 }
 
 #[test]
@@ -763,6 +775,7 @@ fn config_init_global_uses_xdg_config_path() {
     let dir = tempfile::TempDir::new().unwrap();
     let global = dir.path().join("empty-xdg-config/ilearned/config.toml");
     let out = isolated_command(dir.path())
+        .env("HOME", dir.path().join("fake-home"))
         .args(["config", "init", "-g"])
         .output()
         .unwrap();
@@ -782,6 +795,55 @@ fn config_init_global_uses_xdg_config_path() {
     );
     let parsed: FileConfig = toml::from_str(&std::fs::read_to_string(global).unwrap()).unwrap();
     assert_eq!(parsed.active_days, Some(60));
+}
+
+#[test]
+fn config_init_global_sets_db_to_xdg_data_home() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let data_home = dir.path().join("xdg-data");
+    let global = dir.path().join("empty-xdg-config/ilearned/config.toml");
+    let out = isolated_command(dir.path())
+        .env("XDG_DATA_HOME", &data_home)
+        .args(["config", "init", "-g"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parsed: FileConfig = toml::from_str(&std::fs::read_to_string(global).unwrap()).unwrap();
+    let expected = data_home.join("ilearned/ilearned.db");
+    assert_eq!(
+        parsed.db.as_deref(),
+        Some(expected.as_path()),
+        "global init should set db to $XDG_DATA_HOME/ilearned/ilearned.db"
+    );
+}
+
+#[test]
+fn config_init_global_falls_back_to_home_local_share() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let home = dir.path().join("fake-home");
+    std::fs::create_dir_all(&home).unwrap();
+    let global = dir.path().join("empty-xdg-config/ilearned/config.toml");
+    let out = isolated_command(dir.path())
+        .env("HOME", &home)
+        .args(["config", "init", "-g"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parsed: FileConfig = toml::from_str(&std::fs::read_to_string(global).unwrap()).unwrap();
+    let expected = home.join(".local/share/ilearned/ilearned.db");
+    assert_eq!(
+        parsed.db.as_deref(),
+        Some(expected.as_path()),
+        "global init without XDG_DATA_HOME should fall back to ~/.local/share"
+    );
 }
 
 #[test]

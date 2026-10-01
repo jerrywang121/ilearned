@@ -37,11 +37,16 @@ ilearned mcp
   `api_key_configured` instead. It does not open the database, so it also works
   before a database exists.
   `config init` generates the default TOML directly from the executable at
-  `./.ilearned/config.toml`; `config init -g` uses the global config path
-  (`$XDG_CONFIG_HOME/ilearned/config.toml` or `~/.config/ilearned/config.toml`).
-  Parent directories are created, new files use owner-only permissions where
-  supported, but an existing target is never overwritten and the command fails
-  while reporting its path. On success it prints only the generated path.
+  `./.ilearned/config.toml` with `db = "./.ilearned/ilearned.db"` set as the
+  active database path; `config init -g` uses the global config path
+  (`$XDG_CONFIG_HOME/ilearned/config.toml` or `~/.config/ilearned/config.toml`)
+  and sets `db` to the global data location
+  (`$XDG_DATA_HOME/ilearned/ilearned.db`, falling back to
+  `~/.local/share/ilearned/ilearned.db`; the command fails when neither
+  `XDG_DATA_HOME` nor `HOME` is set). Parent directories are created, new
+  files use owner-only permissions where supported, but an existing target is
+  never overwritten and the command fails while reporting its path. On success
+  it prints only the generated path.
 - Topic form: hierarchical, e.g. `travel/hotel/checkout`; each `/`-separated
   segment must match `[a-z0-9_-]` (lowercase letters, digits, hyphen,
   underscore) — no empty segments, no uppercase, dots, or spaces. `#` is

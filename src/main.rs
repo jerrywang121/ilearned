@@ -34,7 +34,17 @@ fn run_config_command(
             } else {
                 FileConfig::local_path()
             };
-            FileConfig::init(&path)?;
+            let db_path = if args.global {
+                FileConfig::global_data_db_path().ok_or_else(|| {
+                    ilearned::AppError::InvalidInput(
+                        "cannot determine global data directory: set XDG_DATA_HOME or HOME"
+                            .to_string(),
+                    )
+                })?
+            } else {
+                FileConfig::local_db_fallback()
+            };
+            FileConfig::init(&path, &db_path.to_string_lossy())?;
             Ok(path.display().to_string())
         }
     }
