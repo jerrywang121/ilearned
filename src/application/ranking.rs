@@ -44,6 +44,8 @@ pub fn rrf_fuse(
     out
 }
 
+pub const RRF_K: u32 = 60;
+
 #[cfg(test)]
 mod tests {
     use super::cosine;
@@ -60,5 +62,3 @@ mod tests {
         assert_eq!(cosine(&[], &[1.0]), 0.0);
     }
 }
-
-pub const RRF_K: u32 = 60;
