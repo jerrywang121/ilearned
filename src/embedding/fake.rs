@@ -67,6 +67,10 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
     fn model_id(&self) -> &str {
         &self.model
     }
+
+    fn dimensions(&self) -> Option<usize> {
+        Some(self.dim)
+    }
 }
 
 #[async_trait]

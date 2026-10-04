@@ -138,7 +138,8 @@ fn main() {
         | Commands::Promote(_)
         | Commands::Demote(_)
         | Commands::Topic(_)
-        | Commands::Clear(_)) => {
+        | Commands::Clear(_)
+        | Commands::Embedding(_)) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
                 eprintln!("{}", render_error(&e, json));
                 std::process::exit(exit_code(&e));

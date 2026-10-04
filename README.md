@@ -193,21 +193,27 @@ per-field by local `./.ilearned/config.toml`, then by the explicit
 | Retention (days) | `retention_days` | `ILEARNED_RETENTION_DAYS` | `60` |
 | Demote auto-delete threshold | `auto_delete_threshold` | — (TOML only) | `0.3` |
 | Embedding endpoint/model/key | `[embedding] endpoint/model/api_key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
-| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (dims stored per vector but unused for filtering) |
+| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (returned dimensions are validated and part of vector identity) |
 | Search cap | — (code constant `MAX_LIMIT`) | — | `100` (larger `limit` clamps, no error) |
 
 `MAX_LIMIT` is a compile-time constant in `application::service`; there is
 no flag/env knob — a deliberate follow-up (see Roadmap). Semantic search
-stores one vector per experience per embedding `model` (`embeddings`
-keyed `(topic,id,model)`); **changing the embedding model in TOML/env
-orphans existing vectors** — old-model rows are never re-embedded or
-compared, and the new model only sees records written (or modified) after
-the switch. `dims` is stored alongside each vector but never used for
-filtering (cosine runs over the shorter length), so changing `dims` alone
-does not orphan rows. To migrate after a model switch, re-embed (e.g.
-`update` each record with a real field change — blank-only `update` is
-rejected), or wipe vectors by deleting the rows for the old model.
-There is no automatic migration path yet.
+stores one vector per experience per embedding identity (`model` plus
+dimension); `embeddings` is keyed `(topic,id,model,dims)`. Search loads only
+the exact configured model and returned dimension, so vectors from another
+model or dimension are ignored rather than compared with a truncated cosine
+calculation.
+
+When the configured model or dimension changes, run
+`ilearned embedding migrate [--prune] [--yes] [--json]`. The command requires
+an embedding provider, reconciles lifecycle state, and re-embeds every
+non-deleted experience, including inactive and forgotten records. Deleted
+records are excluded. New vectors are staged under the target identity and
+old vectors are retained by default. A provider, dimension, or storage
+failure stops the run without pruning; successfully staged vectors remain and
+rerunning is safe. `--prune` removes non-target vector identities only after
+the complete migration succeeds and requires the usual confirmation (or
+`--yes`).
 
 Embedding failure on `add`/`update` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.
 
@@ -253,7 +259,6 @@ All four must pass before committing. See [docs/development.md](docs/development
 Tracked as follow-ups in [docs/TODO.md](docs/TODO.md):
 
 - Documented maximum search limit tuning (`MAX_LIMIT`)
-- Embedding model/dimension migration path
 - Portable JSONL `export`/`import` round-trip (done; file-copy backup
   out of scope)
 

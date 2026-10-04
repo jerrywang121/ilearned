@@ -1,9 +1,16 @@
+use async_trait::async_trait;
 use chrono::Utc;
 use ilearned::application::MemoryService;
 use ilearned::domain::lifecycle::LifecycleConfig;
-use ilearned::domain::{AddCommand, FeedbackCommand, SearchQuery, State, UpdateCommand};
+use ilearned::domain::{
+    AddCommand, Experience, FeedbackCommand, SearchQuery, State, UpdateCommand,
+};
+use ilearned::embedding::EmbeddingProvider;
+use ilearned::error::AppError;
+use ilearned::storage::embeddings::VectorStore;
 use ilearned::storage::repository::ExperienceRepo;
 use ilearned::storage::SqliteRepo;
+use std::sync::{Arc, Mutex};
 
 fn svc() -> (tempfile::TempDir, MemoryService<SqliteRepo>) {
     let dir = tempfile::tempdir().unwrap();
@@ -19,6 +26,78 @@ fn add_cmd(topic: &str) -> AddCommand {
         if_text: "alert fires".to_string(),
         do_text: "restart worker".to_string(),
         check_text: "health ok".to_string(),
+    }
+}
+
+#[derive(Clone)]
+struct TestEmbeddingProvider {
+    model: String,
+    dimensions: Option<usize>,
+    vectors: Vec<Vec<f32>>,
+    calls: Arc<Mutex<usize>>,
+    fail_at: Option<usize>,
+}
+
+impl TestEmbeddingProvider {
+    fn new(
+        model: &str,
+        dimensions: Option<usize>,
+        vectors: Vec<Vec<f32>>,
+        fail_at: Option<usize>,
+    ) -> Self {
+        Self {
+            model: model.to_string(),
+            dimensions,
+            vectors,
+            calls: Arc::new(Mutex::new(0)),
+            fail_at,
+        }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for TestEmbeddingProvider {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>, AppError> {
+        let index = {
+            let mut calls = self.calls.lock().expect("call counter lock");
+            let index = *calls;
+            *calls += 1;
+            index
+        };
+        if self.fail_at == Some(index) {
+            return Err(AppError::EmbeddingUnavailable(
+                "test provider failure".to_string(),
+            ));
+        }
+        Ok(self
+            .vectors
+            .get(index)
+            .cloned()
+            .or_else(|| self.vectors.last().cloned())
+            .unwrap_or_default())
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model
+    }
+
+    fn dimensions(&self) -> Option<usize> {
+        self.dimensions
+    }
+}
+
+fn migration_exp(id: &str, state: State) -> Experience {
+    Experience {
+        topic: "migration".to_string(),
+        id: id.to_string(),
+        when_text: "when migration runs".to_string(),
+        if_text: "if the provider responds".to_string(),
+        do_text: "stage the vector".to_string(),
+        check_text: "the target row exists".to_string(),
+        updated_at: Utc::now(),
+        good_count: 1,
+        bad_count: 0,
+        state,
     }
 }
 
@@ -521,5 +600,238 @@ fn demote_auto_delete_starts_retention_clock() {
     assert!(
         retention.is_some(),
         "retention clock must start on auto-delete"
+    );
+}
+
+#[test]
+fn migration_reembeds_non_deleted_records_and_preserves_canonical_data() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "new-model",
+        Some(3),
+        vec![vec![1.0, 0.0, 0.0]],
+        None,
+    ));
+    let states = [
+        ("active", State::Active),
+        ("inactive", State::Inactive),
+        ("forgotten", State::Forgotten),
+        ("deleted", State::Deleted),
+    ];
+    for (id, state) in states {
+        let e = migration_exp(id, state);
+        s.repo().insert(&e).unwrap();
+        s.repo()
+            .upsert_vector(&e.topic, &e.id, "old-model", &[1.0, 0.0])
+            .unwrap();
+    }
+    let before = states
+        .iter()
+        .map(|(id, _)| s.repo().get("migration", id).unwrap().unwrap())
+        .collect::<Vec<_>>();
+
+    let summary = s.migrate_embeddings(false).unwrap();
+
+    assert_eq!(summary.model, "new-model");
+    assert_eq!(summary.dims, Some(3));
+    assert_eq!(summary.total, 3);
+    assert_eq!(summary.migrated, 3);
+    assert_eq!(summary.pruned, 0);
+    let target = s.repo().load_vectors(None, "new-model", 3).unwrap();
+    assert_eq!(target.len(), 3);
+    assert!(target.iter().all(|(_, id, _)| id != "deleted"));
+    assert_eq!(
+        s.repo().load_vectors(None, "old-model", 2).unwrap().len(),
+        4
+    );
+    let after = states
+        .iter()
+        .map(|(id, _)| s.repo().get("migration", id).unwrap().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(before, after);
+}
+
+#[test]
+fn migration_failure_preserves_old_vectors_and_skips_prune() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "new-model",
+        Some(3),
+        vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]],
+        Some(1),
+    ));
+    for id in ["a", "b"] {
+        let e = migration_exp(id, State::Active);
+        s.repo().insert(&e).unwrap();
+        s.repo()
+            .upsert_vector(&e.topic, &e.id, "old-model", &[1.0, 0.0])
+            .unwrap();
+    }
+    s.repo()
+        .upsert_vector("migration", "a", "obsolete-model", &[0.0, 1.0])
+        .unwrap();
+
+    let err = s.migrate_embeddings(true).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert_eq!(
+        s.repo().load_vectors(None, "old-model", 2).unwrap().len(),
+        2
+    );
+    assert_eq!(
+        s.repo().load_vectors(None, "new-model", 3).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        s.repo()
+            .load_vectors(None, "obsolete-model", 2)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn migration_rejects_dimension_mismatch() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "new-model",
+        Some(3),
+        vec![vec![1.0, 0.0]],
+        None,
+    ));
+    let e = migration_exp("mismatch", State::Active);
+    s.repo().insert(&e).unwrap();
+
+    let err = s.migrate_embeddings(false).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert!(s
+        .repo()
+        .load_vectors(None, "new-model", 2)
+        .unwrap()
+        .is_empty());
+    assert!(s
+        .repo()
+        .load_vectors(None, "new-model", 3)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn migration_rejects_empty_vectors() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "new-model",
+        None,
+        vec![vec![]],
+        None,
+    ));
+    let e = migration_exp("empty", State::Active);
+    s.repo().insert(&e).unwrap();
+
+    let err = s.migrate_embeddings(false).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert!(s
+        .repo()
+        .load_vectors(None, "new-model", 0)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn migration_rejects_inconsistent_undeclared_dimensions() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "new-model",
+        None,
+        vec![vec![1.0, 0.0], vec![1.0, 0.0, 0.0]],
+        None,
+    ));
+    for id in ["a", "b"] {
+        let e = migration_exp(id, State::Active);
+        s.repo().insert(&e).unwrap();
+        s.repo()
+            .upsert_vector(&e.topic, &e.id, "old-model", &[1.0, 0.0])
+            .unwrap();
+    }
+    s.repo()
+        .upsert_vector("migration", "a", "obsolete-model", &[0.0, 1.0])
+        .unwrap();
+
+    let err = s.migrate_embeddings(true).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert_eq!(
+        s.repo().load_vectors(None, "new-model", 2).unwrap().len(),
+        1
+    );
+    assert!(s
+        .repo()
+        .load_vectors(None, "new-model", 3)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        s.repo().load_vectors(None, "old-model", 2).unwrap().len(),
+        2
+    );
+    assert_eq!(
+        s.repo()
+            .load_vectors(None, "obsolete-model", 2)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn semantic_search_does_not_use_mismatched_vectors() {
+    let (_d, base) = svc();
+    let s = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "test-model",
+        Some(3),
+        vec![vec![1.0, 0.0, 0.0]],
+        None,
+    ));
+    let e = migration_exp("semantic", State::Active);
+    s.repo().insert(&e).unwrap();
+    s.repo()
+        .upsert_vector(&e.topic, &e.id, "test-model", &[1.0, 0.0])
+        .unwrap();
+
+    let hits = s
+        .search(&SearchQuery {
+            semantic: Some("query".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+
+    assert!(hits.is_empty());
+}
+
+#[test]
+fn migration_rejects_zero_declared_dimension_before_prune() {
+    let (_dir, base) = svc();
+    base.repo()
+        .upsert_vector("old", "id", "old-model", &[1.0, 0.0])
+        .unwrap();
+    let service = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "zero-model",
+        Some(0),
+        vec![],
+        None,
+    ));
+
+    let err = service.migrate_embeddings(true).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert_eq!(
+        service
+            .repo()
+            .load_vectors(None, "old-model", 2)
+            .unwrap()
+            .len(),
+        1
     );
 }

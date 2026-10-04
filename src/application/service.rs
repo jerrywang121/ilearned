@@ -43,6 +43,16 @@ pub struct ImportSummary {
     pub errors: Vec<ImportError>,
 }
 
+/// Result of rebuilding derived vectors for the configured embedding identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingMigrationSummary {
+    pub model: String,
+    pub dims: Option<usize>,
+    pub total: usize,
+    pub migrated: usize,
+    pub pruned: u64,
+}
+
 /// The sole entry point for adapters. Owns lifecycle, ranking, transactions.
 pub struct MemoryService<R> {
     repo: R,
@@ -106,6 +116,28 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         .map_err(|_| AppError::Internal("embedding thread panicked".to_string()))?
     }
 
+    fn checked_embed(&self, text: &str) -> Result<Vec<f32>, AppError> {
+        let provider = self.embedding.clone().ok_or_else(|| {
+            AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
+        })?;
+        let vector = self.block_embed(text)?;
+        if vector.is_empty() {
+            return Err(AppError::EmbeddingUnavailable(
+                "embedding provider returned an empty vector".to_string(),
+            ));
+        }
+        if let Some(expected) = provider.dimensions() {
+            if vector.len() != expected {
+                return Err(AppError::EmbeddingUnavailable(format!(
+                    "embedding provider returned dimension {}, expected {}",
+                    vector.len(),
+                    expected
+                )));
+            }
+        }
+        Ok(vector)
+    }
+
     fn doc_text(e: &Experience) -> String {
         format!(
             "{} {} {} {}",
@@ -121,7 +153,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             let model = p.model_id().to_string();
             let topic = e.topic.clone();
             let id = e.id.clone();
-            match self.block_embed(&text) {
+            match self.checked_embed(&text) {
                 Ok(v) => {
                     if let Err(err) = self.repo.upsert_vector(&topic, &id, &model, &v) {
                         eprintln!("ilearned: vector upsert failed: {err}");
@@ -434,9 +466,9 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
             AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
         })?;
         // Embed failure => typed error, never a silent text fallback.
-        let qv = self.block_embed(query_text)?;
+        let qv = self.checked_embed(query_text)?;
         let model = provider.model_id().to_string();
-        let stored = self.repo.load_vectors(sql_topic, &model)?;
+        let stored = self.repo.load_vectors(sql_topic, &model, qv.len())?;
         let ids: HashSet<(String, String)> = stored
             .iter()
             .map(|(t, i, _)| (t.clone(), i.clone()))
@@ -466,6 +498,60 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                 .then_with(|| a.0.id.cmp(&b.0.id))
         });
         Ok(scored.into_iter().map(|(e, _)| e).collect())
+    }
+
+    pub fn migrate_embeddings(&self, prune: bool) -> Result<EmbeddingMigrationSummary, AppError> {
+        self.reconcile()?;
+        let provider = self.embedding.clone().ok_or_else(|| {
+            AppError::EmbeddingUnavailable("no embedding provider configured".to_string())
+        })?;
+        let model = provider.model_id().to_string();
+        let mut dims = provider.dimensions();
+        if dims == Some(0) {
+            return Err(AppError::EmbeddingUnavailable(
+                "embedding provider declared zero dimensions".to_string(),
+            ));
+        }
+        let candidates = self.repo.list_embedding_candidates()?;
+        let total = candidates.len();
+        let mut migrated = 0;
+
+        for experience in candidates {
+            let vector = self.checked_embed(&Self::doc_text(&experience))?;
+            match dims {
+                Some(expected) if expected != vector.len() => {
+                    return Err(AppError::EmbeddingUnavailable(format!(
+                        "embedding migration returned dimension {}, expected {}",
+                        vector.len(),
+                        expected
+                    )));
+                }
+                None => dims = Some(vector.len()),
+                Some(_) => {}
+            }
+            self.repo
+                .upsert_vector(&experience.topic, &experience.id, &model, &vector)?;
+            migrated += 1;
+        }
+
+        let pruned = if prune {
+            let target_dims = dims.ok_or_else(|| {
+                AppError::InvalidInput(
+                    "cannot prune embeddings without a target dimension".to_string(),
+                )
+            })?;
+            self.repo.prune_vectors(&model, target_dims)?
+        } else {
+            0
+        };
+
+        Ok(EmbeddingMigrationSummary {
+            model,
+            dims,
+            total,
+            migrated,
+            pruned,
+        })
     }
 
     pub fn search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {

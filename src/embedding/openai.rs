@@ -11,6 +11,7 @@ pub struct OpenAiEmbeddingProvider {
     endpoint: String,
     model: String,
     api_key: String,
+    dims: usize,
     timeout: Duration,
     client: reqwest::Client,
 }
@@ -21,6 +22,7 @@ impl OpenAiEmbeddingProvider {
             endpoint: cfg.endpoint.clone(),
             model: cfg.model.clone(),
             api_key: cfg.api_key.clone(),
+            dims: cfg.dims,
             timeout: Duration::from_secs(cfg.timeout_secs.max(1)),
             client: reqwest::Client::new(),
         }
@@ -78,5 +80,9 @@ impl EmbeddingProvider for OpenAiEmbeddingProvider {
 
     fn model_id(&self) -> &str {
         &self.model
+    }
+
+    fn dimensions(&self) -> Option<usize> {
+        Some(self.dims)
     }
 }

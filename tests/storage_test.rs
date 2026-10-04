@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use ilearned::domain::{Experience, State};
+use ilearned::storage::embeddings::VectorStore;
 use ilearned::storage::repository::ExperienceRepo;
 use ilearned::storage::SqliteRepo;
 
@@ -165,5 +166,87 @@ fn lifecycle_reconcile_and_purge() {
                 .unwrap()
                 .iter()
                 .any(|(e, _)| e.id == "old121")
+    );
+}
+
+#[test]
+fn embedding_storage_uses_model_and_dimension_identity() {
+    let (_d, repo) = open_repo();
+    repo.upsert_vector("t", "id", "model", &[1.0, 0.0]).unwrap();
+    repo.upsert_vector("t", "id", "model", &[1.0, 0.0, 0.0])
+        .unwrap();
+
+    assert_eq!(repo.load_vectors(None, "model", 2).unwrap().len(), 1);
+    assert_eq!(repo.load_vectors(None, "model", 3).unwrap().len(), 1);
+    assert!(repo.load_vectors(None, "model", 4).unwrap().is_empty());
+}
+
+#[test]
+fn old_embedding_table_is_upgraded_without_losing_vectors() {
+    let (_d, repo) = open_repo();
+    repo.conn()
+        .execute_batch(
+            "CREATE TABLE embeddings (
+                topic TEXT NOT NULL,
+                id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                dims INTEGER NOT NULL,
+                vec BLOB NOT NULL,
+                PRIMARY KEY (topic, id, model)
+            );",
+        )
+        .unwrap();
+    repo.conn()
+        .execute(
+            "INSERT INTO embeddings (topic,id,model,dims,vec) VALUES (?1,?2,?3,?4,?5)",
+            rusqlite::params![
+                "t",
+                "id",
+                "model",
+                2_i64,
+                vec![0_u8, 0, 128, 63, 0, 0, 0, 0]
+            ],
+        )
+        .unwrap();
+
+    repo.upsert_vector("t", "id", "model", &[1.0, 0.0, 0.0])
+        .unwrap();
+
+    assert_eq!(repo.load_vectors(None, "model", 2).unwrap().len(), 1);
+    assert_eq!(repo.load_vectors(None, "model", 3).unwrap().len(), 1);
+}
+
+#[test]
+fn prune_vectors_preserves_target_identity() {
+    let (_d, repo) = open_repo();
+    repo.upsert_vector("t", "id", "target", &[1.0, 0.0])
+        .unwrap();
+    repo.upsert_vector("t", "id", "obsolete", &[1.0, 0.0])
+        .unwrap();
+    repo.upsert_vector("t", "id", "target", &[1.0, 0.0, 0.0])
+        .unwrap();
+
+    assert_eq!(repo.prune_vectors("target", 2).unwrap(), 2);
+    assert_eq!(repo.load_vectors(None, "target", 2).unwrap().len(), 1);
+    assert!(repo.load_vectors(None, "target", 3).unwrap().is_empty());
+    assert!(repo.load_vectors(None, "obsolete", 2).unwrap().is_empty());
+}
+
+#[test]
+fn embedding_candidates_include_non_deleted_states() {
+    let (_d, repo) = open_repo();
+    for (id, state) in [
+        ("active", State::Active),
+        ("inactive", State::Inactive),
+        ("forgotten", State::Forgotten),
+        ("deleted", State::Deleted),
+    ] {
+        repo.insert(&exp("migration", id, 0, state)).unwrap();
+    }
+
+    let candidates = repo.list_embedding_candidates().unwrap();
+    assert_eq!(
+        candidates.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        vec!["active", "forgotten", "inactive"]
     );
 }

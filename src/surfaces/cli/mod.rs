@@ -3,8 +3,8 @@ pub mod render;
 
 pub use commands::{Cli, Commands};
 pub use render::{
-    confirm_destructive, exit_code, render_clear, render_error, render_feedback, render_identity,
-    render_list,
+    confirm_destructive, exit_code, render_clear, render_embedding_migration, render_error,
+    render_feedback, render_identity, render_list,
 };
 
 use crate::application::MemoryService;
@@ -92,6 +92,16 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
             };
             let summary = svc.clear(&cc)?;
             Ok(render_clear(summary, json))
+        }
+        Commands::Embedding(e) => {
+            let commands::EmbeddingCommands::Migrate(a) = &e.command;
+            if a.prune && !confirm_destructive("prune obsolete embedding vectors?", a.yes) {
+                return Err(AppError::InvalidInput(
+                    "embedding prune not confirmed".to_string(),
+                ));
+            }
+            let summary = svc.migrate_embeddings(a.prune)?;
+            Ok(render_embedding_migration(&summary, json))
         }
         Commands::Serve(_) | Commands::Mcp(_) => Err(AppError::InvalidInput(
             "serve/mcp are handled by the main dispatch".to_string(),

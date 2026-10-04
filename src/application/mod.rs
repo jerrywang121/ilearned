@@ -3,4 +3,6 @@ pub mod service;
 
 pub use crate::domain::commands::ClearSummary;
 pub use crate::domain::commands::TopicQuery;
-pub use service::{ImportError, ImportOutcome, ImportSummary, MemoryService, MAX_LIMIT};
+pub use service::{
+    EmbeddingMigrationSummary, ImportError, ImportOutcome, ImportSummary, MemoryService, MAX_LIMIT,
+};
