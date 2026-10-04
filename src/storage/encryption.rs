@@ -243,11 +243,26 @@ where
             )),
         };
     }
-    remove(backup).map_err(|_| {
-        AppError::Storage(
-            "encrypted database replaced but unable to remove plaintext backup".to_string(),
-        )
-    })
+    if remove(backup).is_ok() {
+        return Ok(());
+    }
+
+    if remove(source).is_err() {
+        return Err(AppError::Storage(
+            "unable to remove plaintext backup and encrypted replacement; source restoration was not possible"
+                .to_string(),
+        ));
+    }
+    match rename(backup, source) {
+        Ok(()) => Err(AppError::Storage(
+            "unable to remove plaintext backup; encrypted replacement removed and source restored"
+                .to_string(),
+        )),
+        Err(_) => Err(AppError::Storage(
+            "unable to remove plaintext backup and restore the source after removing the encrypted replacement"
+                .to_string(),
+        )),
+    }
 }
 
 fn remove_database_files(path: &Path) {
@@ -300,17 +315,74 @@ mod tests {
     }
 
     #[test]
-    fn replacement_backup_cleanup_failure_is_reported() {
+    fn replacement_backup_cleanup_failure_restores_the_source() {
+        use std::{cell::RefCell, rc::Rc};
+
+        let renames = Rc::new(RefCell::new(Vec::new()));
+        let removals = Rc::new(RefCell::new(Vec::new()));
+        let rename_log = Rc::clone(&renames);
+        let removal_log = Rc::clone(&removals);
         let error = replace_with_rollback(
             Path::new("source.db"),
             Path::new("temporary.db"),
             Path::new("backup.db"),
-            |_, _| Ok(()),
-            |_| Err(std::io::Error::other("simulated cleanup failure")),
+            move |from, to| {
+                rename_log
+                    .borrow_mut()
+                    .push((from.to_path_buf(), to.to_path_buf()));
+                Ok(())
+            },
+            move |path| {
+                removal_log.borrow_mut().push(path.to_path_buf());
+                if path == Path::new("backup.db") {
+                    Err(std::io::Error::other("simulated cleanup failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("source restored"));
+        assert_eq!(
+            *removals.borrow(),
+            vec![PathBuf::from("backup.db"), PathBuf::from("source.db")]
+        );
+        assert_eq!(
+            *renames.borrow(),
+            vec![
+                (PathBuf::from("source.db"), PathBuf::from("backup.db")),
+                (PathBuf::from("temporary.db"), PathBuf::from("source.db")),
+                (PathBuf::from("backup.db"), PathBuf::from("source.db")),
+            ]
+        );
+    }
+
+    #[test]
+    fn replacement_backup_cleanup_and_restore_failure_are_reported_together() {
+        let error = replace_with_rollback(
+            Path::new("source.db"),
+            Path::new("temporary.db"),
+            Path::new("backup.db"),
+            |from, to| {
+                if from == Path::new("backup.db") && to == Path::new("source.db") {
+                    Err(std::io::Error::other("simulated restore failure"))
+                } else {
+                    Ok(())
+                }
+            },
+            |path| {
+                if path == Path::new("backup.db") {
+                    Err(std::io::Error::other("simulated cleanup failure"))
+                } else {
+                    Ok(())
+                }
+            },
         )
         .unwrap_err();
 
         assert!(error.to_string().contains("plaintext backup"));
+        assert!(error.to_string().contains("restore"));
     }
 
     #[cfg(not(unix))]
