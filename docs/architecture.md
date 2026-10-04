@@ -36,7 +36,7 @@ initialization, migrations, and all surface adapters.
   search, cosine, RRF (`k=60`), and embedding migration rules live here. `add` retries only on
   primary-key/UNIQUE violations (other storage errors propagate); unknown
   DB `state` values surface as storage errors instead of defaulting.
-- `storage` — SQLite connection, migrations, repositories, FTS5 queries,
+- `storage` — shared key-aware SQLite/SQLCipher connection, migrations, repositories, FTS5 queries,
   embedding persistence, lifecycle reconciliation, purge transactions.
 - `embedding` — `EmbeddingProvider` trait + OpenAI-compatible HTTP client +
   deterministic fake (tests) and failing (error-path tests) providers.
@@ -92,6 +92,18 @@ initialization, migrations, and all surface adapters.
   canonical records, and retains old identities unless a completely
   successful run uses confirmed `--prune`. It is a CLI-only maintenance
   operation; HTTP and MCP do not expose it.
+- The shared storage opener receives the optional process-local
+  `ILEARNED_DB_KEY`. With no key it preserves plaintext SQLite compatibility;
+  with a key it applies SQLCipher's key before any schema access and enables
+  `cipher_memory_security`, then performs the existing WAL, timeout, migration,
+  and schema setup. The key is never stored in TOML or configuration output.
+- Plaintext-to-encrypted conversion is explicit (`ilearned db encrypt`), runs
+  before keyed service construction, and uses `sqlcipher_export` followed by
+  SQLCipher integrity and schema verification. Only a verified destination is
+  atomically substituted for the source; failed conversions leave the source
+  usable and do not retain a plaintext backup. Stale plaintext `-wal`/`-shm`
+  sidecars are removed after successful replacement. JSONL exports are outside
+  this database-encryption boundary.
 
 Full design: `docs/superpowers/specs/2026-09-27-initial-architecture-design.md`.
 Implementation plan: `docs/superpowers/plans/2026-09-27-initial-architecture.md`.

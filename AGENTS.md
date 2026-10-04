@@ -34,6 +34,19 @@ lifecycle transitions, or ranking logic.
 - Embedding failure on write never rolls back; semantic query without an
   embedding fails typed (503), never silently text-only.
 - Destructive actions need explicit confirmation; all HTML escaped.
+- Database encryption is optional: an unset `ILEARNED_DB_KEY` preserves
+  plaintext SQLite compatibility. A present-but-empty or non-UTF-8 value is
+  invalid input.
+- `ILEARNED_DB_KEY` is the only key source and is environment-only: never add
+  it to TOML, generated config, CLI arguments, logs, errors, or output;
+  `config show` must not reveal it.
+- The shared SQLite opener applies a configured key before schema access and
+  keyed startup errors map to storage/internal failure without exposing key
+  material. A key never causes automatic conversion of a plaintext database.
+- Plaintext conversion is explicit and confirmation-gated through
+  `ilearned db encrypt [--yes] [--json]`, using `sqlcipher_export` and verified
+  replacement; failures leave the source unchanged and clean temporary output.
+  JSONL exports are not encrypted by this feature.
 
 ## Verification
 

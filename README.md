@@ -31,7 +31,7 @@ All behavior lives in one application service (`MemoryService`); CLI, REST, web,
 - **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`, tie-break `updated_at DESC, topic ASC, id ASC`).
 - **Lifecycle management** — `active` → `inactive` after 60d untouched → `forgotten` after 120d untouched, with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`; explicit detail reads still reach `inactive`/`forgotten` (`deleted`/missing → `NotFound`).
 - **Feedback loop** — `promote`/`demote` bump `good_count`/`bad_count`; `update`/`promote`/`demote` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life. A `demote` that drops the feedback score `good_count / (good_count + bad_count)` strictly below `auto_delete_threshold` (default `0.3`) marks the record `deleted` (retention clock starts; purge applies).
-- **Local-first** — single-user, SQLite (WAL) backend, no auth, no JS build.
+- **Local-first** — single-user, SQLite (WAL) backend, optional SQLCipher encryption at rest, no auth, no JS build.
 
 ## Installation
 
@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/jerrywang121/ilear
 
 ### Build from source
 
-Requirements: Rust toolchain (1.98+) and a C toolchain (SQLite builds from source via rusqlite `bundled`; no OpenSSL headers needed — reqwest uses rustls).
+Requirements: Rust toolchain (1.98+) and a C toolchain. SQLite/SQLCipher and vendored OpenSSL build from source through rusqlite; no system OpenSSL headers are needed.
 
 ```bash
 git clone https://github.com/jerrywang121/ilearned
@@ -121,6 +121,7 @@ ilearned demote --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
+ilearned db encrypt [--yes] [--json]
 ilearned config show
 ilearned config init [-g] [--force | -f]
 ilearned serve [--bind ADDR]
@@ -129,6 +130,8 @@ ilearned mcp
 
 - Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`. `delete` on a never-existing `(topic, id)` is not-found (exit 1); deleting an already-deleted record is idempotent success.
 - `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file unless `--force` (or `-f`) is supplied.
+- Database encryption is controlled only by the optional `ILEARNED_DB_KEY` environment variable (default: unset, plaintext mode). The key is held for the process, is never persisted in TOML, shown by `config show`, emitted in output/errors, or accepted as a CLI argument. Empty and non-UTF-8 values are invalid (exit 2). A keyed startup uses SQLCipher; a wrong key or a key on an existing plaintext database fails as a database error (exit 4) and points to `ilearned db encrypt` rather than converting automatically.
+- `ilearned db encrypt [--yes] [--json]` explicitly converts the resolved existing plaintext database using `ILEARNED_DB_KEY`. It requires confirmation (`--yes` or interactive `y/N`); refusal, a missing key, an unsupported/already-encrypted source, or a conversion failure leaves the source unchanged and returns a non-zero error. JSON success is `{"encrypted":{"path":"..."}}`; human output is concise. The conversion verifies the encrypted result, atomically replaces the source, and removes stale plaintext `-wal`/`-shm` sidecars.
 - Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `update` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}` (`state` is `"deleted"` when a demote crossed the auto-delete threshold); and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label (demote appends `[auto-deleted]` when the record was auto-deleted). `config init` prints only the generated file path.
 - Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
 - `update` needs at least one non-blank field (blank-only values are ignored).
@@ -187,6 +190,7 @@ per-field by local `./.ilearned/config.toml`, then by the explicit
 | Setting | TOML key | Env | Default |
 | --- | --- | --- | --- |
 | Database path | `db` | `ILEARNED_DB` | Existing `./.ilearned/ilearned.db`, then existing `$XDG_DATA_HOME/ilearned/ilearned.db` (or `~/.local/share/ilearned/ilearned.db`); otherwise an error |
+| Database encryption key | — | `ILEARNED_DB_KEY` | unset (plaintext mode) |
 | Bind address | `bind` | `ILEARNED_BIND` | `127.0.0.1:8787` |
 | Active period (days) | `active_days` | `ILEARNED_ACTIVE_DAYS` | `60` |
 | Forget period (days) | `forget_days` | `ILEARNED_FORGET_DAYS` | `120` |
@@ -203,6 +207,12 @@ dimension); `embeddings` is keyed `(topic,id,model,dims)`. Search loads only
 the exact configured model and returned dimension, so vectors from another
 model or dimension are ignored rather than compared with a truncated cosine
 calculation.
+
+When `ILEARNED_DB_KEY` is set, the shared SQLite opener applies SQLCipher's key
+before schema access and enables `cipher_memory_security`, using SQLCipher's
+default version-4 settings. Existing plaintext databases are not converted on
+startup: use the confirmation-gated `db encrypt` command above. JSONL exports
+remain plaintext portable backups and are not encrypted by this feature.
 
 When the configured model or dimension changes, run
 `ilearned embedding migrate [--prune] [--yes] [--json]`. The command requires
