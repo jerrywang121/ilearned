@@ -10,6 +10,9 @@ use crate::error::AppError;
 pub trait EmbeddingProvider: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, AppError>;
     fn model_id(&self) -> &str;
+    fn dimensions(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub type DynProvider = Arc<dyn EmbeddingProvider>;

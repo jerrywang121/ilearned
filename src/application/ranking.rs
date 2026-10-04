@@ -1,13 +1,12 @@
 //! Cosine similarity + reciprocal-rank fusion (k=60).
 
-/// Cosine similarity in [-1, 1]; 0 when either vector is degenerate.
+/// Cosine similarity in [-1, 1]; 0 when vectors are degenerate or differ in dimension.
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len().min(b.len());
-    if n == 0 {
+    if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
     let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
-    for i in 0..n {
+    for i in 0..a.len() {
         dot += a[i] * b[i];
         na += a[i] * a[i];
         nb += b[i] * b[i];
@@ -43,6 +42,24 @@ pub fn rrf_fuse(
             .then_with(|| a.0.cmp(&b.0))
     });
     out
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::cosine;
+
+    #[test]
+    fn cosine_rejects_mismatched_dimensions() {
+        assert_eq!(cosine(&[1.0, 0.0], &[1.0, 0.0, 0.0]), 0.0);
+        assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn cosine_returns_zero_for_empty_vectors() {
+        assert_eq!(cosine(&[], &[]), 0.0);
+        assert_eq!(cosine(&[], &[1.0]), 0.0);
+    }
 }
 
 pub const RRF_K: u32 = 60;
