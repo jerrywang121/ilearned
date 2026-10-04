@@ -5,8 +5,9 @@ use std::sync::{Mutex, MutexGuard};
 use ilearned::config::{Config, EmbeddingConfig, FileConfig};
 
 static PROCESS_ENV_LOCK: Mutex<()> = Mutex::new(());
-const CONFIG_ENV_VARS: [&str; 13] = [
+const CONFIG_ENV_VARS: [&str; 14] = [
     "ILEARNED_DB",
+    "ILEARNED_DB_KEY",
     "ILEARNED_BIND",
     "ILEARNED_ACTIVE_DAYS",
     "ILEARNED_FORGET_DAYS",
@@ -1210,5 +1211,67 @@ fn empty_database_file_value_is_not_configured() {
     assert!(
         matches!(res, Err(ilearned::AppError::InvalidInput(ref msg)) if msg.contains("not configured")),
         "expected an unconfigured-db error, got {res:?}"
+    );
+}
+
+#[test]
+fn database_key_is_none_when_not_configured() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB_KEY");
+    }
+    let config = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(config.db_key, None);
+}
+
+#[test]
+fn database_key_comes_from_environment() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", "correct horse");
+    }
+    let config = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(config.db_key.as_deref(), Some("correct horse"));
+}
+
+#[test]
+fn empty_database_key_is_rejected() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", "");
+    }
+    let result = Config::load_with_files(None, None, None, None, None, None, Some(file));
+    assert!(
+        matches!(result, Err(ilearned::AppError::InvalidInput(message)) if message.contains("ILEARNED_DB_KEY"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_database_key_is_rejected() {
+    use std::os::unix::ffi::OsStringExt;
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", std::ffi::OsString::from_vec(vec![0xff]));
+    }
+    let result = Config::load_with_files(None, None, None, None, None, None, Some(file));
+    assert!(
+        matches!(result, Err(ilearned::AppError::InvalidInput(message)) if message.contains("ILEARNED_DB_KEY"))
     );
 }
