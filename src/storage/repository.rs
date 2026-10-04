@@ -74,6 +74,9 @@ pub trait ExperienceRepo: Send + Sync {
     fn distinct_topics(&self, deep: bool) -> Result<Vec<String>, AppError>;
     /// Paginated browse ordered by updated_at DESC (service applies limit/offset).
     fn browse(&self, topic: Option<&str>, deep: bool) -> Result<Vec<Experience>, AppError>;
+    /// All records eligible for derived-vector migration. Unlike browse/search,
+    /// this includes inactive and forgotten records but excludes deleted rows.
+    fn list_embedding_candidates(&self) -> Result<Vec<Experience>, AppError>;
     /// Run lifecycle reconcile + purge (implemented via storage::lifecycle).
     fn reconcile(&self, now: DateTime<Utc>, cfg: &LifecycleConfig) -> Result<(), AppError> {
         reconcile_before_op(&self.conn_ref(), now, cfg)
@@ -294,6 +297,20 @@ impl ExperienceRepo for SqliteRepo {
             .into_iter()
             .filter(|e| is_eligible(&e.state, deep))
             .collect())
+    }
+
+    fn list_embedding_candidates(&self) -> Result<Vec<Experience>, AppError> {
+        let db = self.db.lock().expect("db lock");
+        let mut stmt = db.prepare(
+            "SELECT topic,id,when_text,if_text,do_text,check_text,updated_at,good_count,bad_count,state
+             FROM experiences
+             WHERE state != 'deleted'
+             ORDER BY topic ASC, id ASC",
+        )?;
+        let rows = stmt
+            .query_map([], row_to_exp)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     fn distinct_topics(&self, deep: bool) -> Result<Vec<String>, AppError> {

@@ -44,7 +44,6 @@ pub fn rrf_fuse(
     out
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::cosine;

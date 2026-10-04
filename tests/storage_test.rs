@@ -231,3 +231,22 @@ fn prune_vectors_preserves_target_identity() {
     assert!(repo.load_vectors(None, "target", 3).unwrap().is_empty());
     assert!(repo.load_vectors(None, "obsolete", 2).unwrap().is_empty());
 }
+
+#[test]
+fn embedding_candidates_include_non_deleted_states() {
+    let (_d, repo) = open_repo();
+    for (id, state) in [
+        ("active", State::Active),
+        ("inactive", State::Inactive),
+        ("forgotten", State::Forgotten),
+        ("deleted", State::Deleted),
+    ] {
+        repo.insert(&exp("migration", id, 0, state)).unwrap();
+    }
+
+    let candidates = repo.list_embedding_candidates().unwrap();
+    assert_eq!(
+        candidates.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        vec!["active", "forgotten", "inactive"]
+    );
+}
