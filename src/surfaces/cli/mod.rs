@@ -3,8 +3,8 @@ pub mod render;
 
 pub use commands::{Cli, Commands};
 pub use render::{
-    confirm_destructive, exit_code, render_clear, render_embedding_migration, render_error,
-    render_feedback, render_identity, render_list,
+    confirm_destructive, exit_code, render_clear, render_database_encryption,
+    render_embedding_migration, render_error, render_feedback, render_identity, render_list,
 };
 
 use crate::application::MemoryService;
@@ -103,6 +103,9 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
             let summary = svc.migrate_embeddings(a.prune)?;
             Ok(render_embedding_migration(&summary, json))
         }
+        Commands::Db(_) => Err(AppError::InvalidInput(
+            "db commands are handled by the main dispatch".to_string(),
+        )),
         Commands::Serve(_) | Commands::Mcp(_) => Err(AppError::InvalidInput(
             "serve/mcp are handled by the main dispatch".to_string(),
         )),

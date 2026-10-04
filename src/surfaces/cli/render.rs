@@ -83,6 +83,16 @@ pub fn render_clear(summary: ClearSummary, json: bool) -> String {
     }
 }
 
+/// Render the successful conversion of a plaintext database to SQLCipher format.
+pub fn render_database_encryption(path: &std::path::Path, json: bool) -> String {
+    let path = path.display().to_string();
+    if json {
+        serde_json::json!({"encrypted": {"path": path}}).to_string()
+    } else {
+        format!("encrypted database {path}")
+    }
+}
+
 /// Render the result of rebuilding derived embedding vectors.
 pub fn render_embedding_migration(summary: &EmbeddingMigrationSummary, json: bool) -> String {
     if json {

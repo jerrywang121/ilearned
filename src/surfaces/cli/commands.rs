@@ -57,6 +57,8 @@ pub enum Commands {
     Import(ImportArgs),
     /// Rebuild derived embedding vectors with the configured provider.
     Embedding(EmbeddingArgs),
+    /// Encrypt a plaintext database at rest.
+    Db(DbArgs),
     /// Inspect or initialize TOML configuration files.
     Config(ConfigArgs),
     /// Start REST + web + MCP on one listener.
@@ -75,6 +77,27 @@ pub struct EmbeddingArgs {
 pub enum EmbeddingCommands {
     /// Re-embed all non-deleted experiences with the configured provider.
     Migrate(EmbeddingMigrateArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct DbArgs {
+    #[command(subcommand)]
+    pub command: DbCommands,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum DbCommands {
+    /// Convert a plaintext SQLite database to SQLCipher format.
+    Encrypt(DatabaseEncryptArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct DatabaseEncryptArgs {
+    /// Skip the confirmation prompt.
+    #[arg(long)]
+    pub yes: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -106,6 +129,9 @@ impl Commands {
             Self::Import(a) => a.output.json,
             Self::Embedding(a) => match &a.command {
                 EmbeddingCommands::Migrate(a) => a.output.json,
+            },
+            Self::Db(a) => match &a.command {
+                DbCommands::Encrypt(a) => a.output.json,
             },
             Self::Config(a) => matches!(&a.command, ConfigCommands::Show),
             Self::Serve(_) | Self::Mcp(_) => false,

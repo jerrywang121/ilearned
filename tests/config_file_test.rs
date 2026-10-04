@@ -1275,3 +1275,28 @@ fn non_utf8_database_key_is_rejected() {
         matches!(result, Err(ilearned::AppError::InvalidInput(message)) if message.contains("ILEARNED_DB_KEY"))
     );
 }
+
+#[test]
+fn config_show_does_not_print_database_key_from_environment() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!("db = {:?}\n", dir.path().join("db.sqlite")),
+    )
+    .unwrap();
+    let key = "database-secret-must-not-appear";
+
+    let output = isolated_command(dir.path())
+        .env("ILEARNED_DB_KEY", key)
+        .args(["--config-file", config.to_str().unwrap(), "config", "show"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(key));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(key));
+}

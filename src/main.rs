@@ -5,9 +5,11 @@ use tokio::runtime::Builder;
 use ilearned::application::MemoryService;
 use ilearned::config::{Config, EmbeddingConfig, FileConfig, ResolvedConfig};
 use ilearned::embedding::openai::OpenAiEmbeddingProvider;
-use ilearned::storage::SqliteRepo;
+use ilearned::storage::{encrypt_database, SqliteRepo};
 use ilearned::surfaces::cli::{
-    commands::ConfigCommands, exit_code, render_error, run_cli, Cli, Commands,
+    commands::{ConfigCommands, DbCommands},
+    confirm_destructive, exit_code, render_database_encryption, render_error, run_cli, Cli,
+    Commands,
 };
 
 fn run_config_command(
@@ -102,6 +104,32 @@ fn main() {
             std::process::exit(exit_code(&e));
         });
     match &cli.command {
+        Commands::Db(db) => {
+            let DbCommands::Encrypt(args) = &db.command;
+            let Some(key) = cfg.db_key.as_deref() else {
+                let error = ilearned::AppError::InvalidInput(
+                    "database encryption requires ILEARNED_DB_KEY".to_string(),
+                );
+                eprintln!("{}", render_error(&error, json));
+                std::process::exit(exit_code(&error));
+            };
+            if !confirm_destructive(
+                &format!("encrypt database {}?", cfg.db_path.display()),
+                args.yes,
+            ) {
+                let error = ilearned::AppError::InvalidInput(
+                    "database encryption not confirmed".to_string(),
+                );
+                eprintln!("{}", render_error(&error, json));
+                std::process::exit(exit_code(&error));
+            }
+            if let Err(error) = encrypt_database(&cfg.db_path, key) {
+                eprintln!("{}", render_error(&error, json));
+                std::process::exit(exit_code(&error));
+            }
+            println!("{}", render_database_encryption(&cfg.db_path, json));
+            std::process::exit(0);
+        }
         Commands::Serve(a) => {
             let svc = build_service(&cfg).unwrap_or_else(|e| {
                 eprintln!("{}", render_error(&e, json));
