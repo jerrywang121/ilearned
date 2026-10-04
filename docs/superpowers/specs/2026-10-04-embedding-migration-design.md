@@ -79,6 +79,9 @@ JSON output has the corresponding stable object shape:
 ```
 
 The exact counts are computed by the service and are not inferred by the CLI.
+For a provider that declares no dimension and an empty database, `dims` is
+reported as `null`/`unknown`; `--prune` is rejected because no target identity
+can be established.
 No migration command is exposed through REST or MCP because this is an
 operator-controlled database maintenance action.
 
@@ -177,8 +180,8 @@ replaces any target rows through the normal upsert path. Canonical records are
 never part of the migration transaction and are never altered.
 
 The service should expose a small summary value rather than make the CLI
-calculate counts. The summary includes `model`, `dims`, `total`, `migrated`,
-and `pruned`.
+calculate counts. The summary includes `model`, optional `dims`, `total`,
+`migrated`, and `pruned`.
 
 ### Search and normal writes
 
