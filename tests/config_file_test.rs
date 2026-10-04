@@ -982,6 +982,68 @@ fn serve_bind_overrides_config_file_and_environment() {
     panic!("serve did not listen on --bind {bind}; exited with {status}");
 }
 
+#[tokio::test]
+async fn serve_prints_endpoint_urls_after_bind() {
+    use std::process::Stdio;
+    use tokio::io::AsyncBufReadExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("serve.db");
+    let config = dir.path().join("serve.toml");
+    std::fs::write(&config, format!("db = {:?}\n", db.to_string_lossy())).unwrap();
+
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_ilearned"));
+    for name in CONFIG_ENV_VARS {
+        command.env_remove(name);
+    }
+    let mut child = command
+        .args([
+            "--config-file",
+            config.to_str().unwrap(),
+            "serve",
+            "--bind",
+            "127.0.0.1:0",
+        ])
+        .env("XDG_CONFIG_HOME", dir.path().join("empty-xdg-config"))
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut lines = tokio::io::BufReader::new(stdout).lines();
+
+    let web = tokio::time::timeout(std::time::Duration::from_secs(15), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let rest = tokio::time::timeout(std::time::Duration::from_secs(15), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mcp = tokio::time::timeout(std::time::Duration::from_secs(15), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    let port = web
+        .strip_prefix("Web UI: http://127.0.0.1:")
+        .and_then(|url| url.strip_suffix('/'))
+        .and_then(|port| port.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or_else(|| panic!("unexpected web URL: {web}"));
+    let base = format!("http://127.0.0.1:{port}");
+    assert_eq!(rest, format!("REST API: {base}/api/v1"));
+    assert_eq!(mcp, format!("MCP: {base}/mcp"));
+
+    child.kill().await.unwrap();
+    child.wait().await.unwrap();
+}
+
 #[test]
 fn unconfigured_db_uses_local_ilearned_db_when_present() {
     let dir = tempfile::TempDir::new().unwrap();

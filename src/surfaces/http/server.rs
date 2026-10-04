@@ -24,6 +24,14 @@ pub async fn serve_from_shared(
     let listener = tokio::net::TcpListener::bind(bind)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
+    let addr = listener
+        .local_addr()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    println!("Web UI: http://{addr}/");
+    println!("REST API: http://{addr}/api/v1");
+    println!("MCP: http://{addr}/mcp");
+    use std::io::Write as _;
+    let _ = std::io::stdout().flush();
     axum::serve(listener, app)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))

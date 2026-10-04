@@ -144,7 +144,9 @@ ilearned mcp
   invalid lines are skipped with per-line errors on stderr; the good
   lines still commit. Exit 0 when clean, exit 2 when `E > 0`.
 - `serve` starts REST + web + MCP on one listener. `--bind` on the `serve`
-  subcommand wins over every config-file and environment value.
+  subcommand wins over every config-file and environment value. After the
+  listener is ready, startup prints the Web UI URL (`/`), REST API URL
+  (`/api/v1`), and MCP URL (`/mcp`) for the bound address.
 - `mcp` runs the same 9 tools as an MCP server over stdio (stdin/stdout)
   for harness use. It has no bind setting; stdout stays pure JSON-RPC
   (logs/errors go to stderr). It follows the database resolution rules above:
