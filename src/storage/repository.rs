@@ -95,7 +95,11 @@ pub struct SqliteRepo {
 
 impl SqliteRepo {
     pub fn open(path: &std::path::Path) -> Result<Self, AppError> {
-        let conn = open_db(path)?;
+        Self::open_with_key(path, None)
+    }
+
+    pub fn open_with_key(path: &std::path::Path, key: Option<&str>) -> Result<Self, AppError> {
+        let conn = open_db(path, key)?;
         Ok(Self {
             db: std::sync::Arc::new(std::sync::Mutex::new(conn)),
         })

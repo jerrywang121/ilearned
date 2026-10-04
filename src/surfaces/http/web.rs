@@ -45,7 +45,9 @@ fn svc_err(e: AppError) -> Response {
         AppError::InvalidInput(_) | AppError::InvalidFtsSyntax(_) => StatusCode::BAD_REQUEST,
         AppError::NotFound { .. } => StatusCode::NOT_FOUND,
         AppError::EmbeddingUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-        AppError::Storage(_) | AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        AppError::Storage(_) | AppError::DatabaseKey(_) | AppError::Internal(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     };
     err_page(status, &e.to_string())
 }

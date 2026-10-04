@@ -12,6 +12,8 @@ pub enum AppError {
     InvalidFtsSyntax(String),
     #[error("storage error: {0}")]
     Storage(String),
+    #[error("database key error: {0}")]
+    DatabaseKey(String),
     #[error("internal error: {0}")]
     Internal(String),
 }

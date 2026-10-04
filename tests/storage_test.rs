@@ -39,6 +39,49 @@ fn crud_roundtrip_unix_epoch() {
 }
 
 #[test]
+fn keyed_database_reopens_with_same_key_and_has_no_sqlite_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keyed.db");
+    let repo = SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+    repo.insert(&exp("rust", "a1", 0, State::Active)).unwrap();
+
+    let header = std::fs::read(&path).unwrap();
+    assert_ne!(&header[..16], b"SQLite format 3\0");
+
+    let reopened = SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+    assert!(reopened.get("rust", "a1").unwrap().is_some());
+}
+
+#[test]
+fn wrong_key_is_a_database_key_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keyed.db");
+    SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+
+    let error = match SqliteRepo::open_with_key(&path, Some("wrong-key")) {
+        Err(error) => error,
+        Ok(_) => panic!("opening with a wrong key must fail"),
+    };
+    assert!(matches!(error, ilearned::AppError::DatabaseKey(_)));
+    assert!(!error.to_string().contains("test-key"));
+    assert!(!error.to_string().contains("wrong-key"));
+}
+
+#[test]
+fn plaintext_database_rejects_keyed_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plaintext.db");
+    SqliteRepo::open(&path).unwrap();
+
+    let error = match SqliteRepo::open_with_key(&path, Some("test-key")) {
+        Err(error) => error,
+        Ok(_) => panic!("opening plaintext with a key must fail"),
+    };
+    assert!(matches!(error, ilearned::AppError::DatabaseKey(_)));
+    assert!(error.to_string().contains("run ilearned db encrypt"));
+}
+
+#[test]
 fn compound_key_unique() {
     let (_d, repo) = open_repo();
     repo.insert(&exp("rust", "a1", 0, State::Active)).unwrap();

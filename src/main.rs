@@ -51,7 +51,7 @@ fn run_config_command(
 }
 
 fn build_service(cfg: &Config) -> Result<MemoryService<SqliteRepo>, ilearned::AppError> {
-    let repo = SqliteRepo::open(&cfg.db_path)?;
+    let repo = SqliteRepo::open_with_key(&cfg.db_path, cfg.db_key.as_deref())?;
     let svc = MemoryService::new(repo, cfg.lifecycle.clone());
     match cfg.embedding.clone() {
         Some(ec) => Ok(svc.with_embedding_provider(OpenAiEmbeddingProvider::new(&ec))),

@@ -44,29 +44,44 @@ CREATE TRIGGER IF NOT EXISTS experiences_au AFTER UPDATE ON experiences BEGIN
 END;
 "#];
 
-/// Open (creating) the SQLite DB, enable WAL, apply migrations.
-pub fn open_db(path: &Path) -> Result<Connection, AppError> {
+/// Open (creating) the SQLite DB, configure SQLCipher when requested, enable WAL, and apply migrations.
+pub fn open_db(path: &Path, key: Option<&str>) -> Result<Connection, AppError> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|e| AppError::Internal(e.to_string()))?;
         }
     }
     let conn = Connection::open(path)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.busy_timeout(std::time::Duration::from_millis(5000))?;
-    conn.execute_batch(MIGRATIONS[0])?;
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)",
-        [],
-    )?;
-    // Verify the FTS5 table exists (guards against partial migrations).
-    let fts: String = conn.query_row(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='experiences_fts'",
-        [],
-        |r| r.get(0),
-    )?;
-    debug_assert_eq!(fts, "experiences_fts");
-    Ok(conn)
+
+    let initialize = || -> rusqlite::Result<()> {
+        if let Some(key) = key {
+            conn.pragma_update(None, "key", key)?;
+            conn.pragma_update(None, "cipher_memory_security", "ON")?;
+        }
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.busy_timeout(std::time::Duration::from_millis(5000))?;
+        conn.execute_batch(MIGRATIONS[0])?;
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)",
+            [],
+        )?;
+        // Verify the FTS5 table exists (guards against partial migrations).
+        let fts: String = conn.query_row(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='experiences_fts'",
+            [],
+            |r| r.get(0),
+        )?;
+        debug_assert_eq!(fts, "experiences_fts");
+        Ok(())
+    };
+
+    match initialize() {
+        Ok(()) => Ok(conn),
+        Err(_) if key.is_some() => Err(AppError::DatabaseKey(
+            "unable to open the database with the configured key; run ilearned db encrypt to encrypt an existing plaintext database".to_string(),
+        )),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Rebuild the FTS index from the canonical table (recovery path).

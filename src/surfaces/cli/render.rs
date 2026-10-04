@@ -9,7 +9,7 @@ pub fn exit_code(e: &AppError) -> i32 {
         AppError::NotFound { .. } => 1,
         AppError::InvalidInput(_) | AppError::InvalidFtsSyntax(_) => 2,
         AppError::EmbeddingUnavailable(_) => 3,
-        AppError::Storage(_) | AppError::Internal(_) => 4,
+        AppError::Storage(_) | AppError::DatabaseKey(_) | AppError::Internal(_) => 4,
     }
 }
 
