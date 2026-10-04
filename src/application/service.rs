@@ -436,7 +436,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         // Embed failure => typed error, never a silent text fallback.
         let qv = self.block_embed(query_text)?;
         let model = provider.model_id().to_string();
-        let stored = self.repo.load_vectors(sql_topic, &model)?;
+        let stored = self.repo.load_vectors(sql_topic, &model, qv.len())?;
         let ids: HashSet<(String, String)> = stored
             .iter()
             .map(|(t, i, _)| (t.clone(), i.clone()))
