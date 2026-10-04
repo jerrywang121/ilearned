@@ -1,8 +1,9 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
+use tempfile::Builder;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -19,7 +20,7 @@ pub fn encrypt_database(path: &Path, key: &str) -> Result<(), AppError> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let temporary = parent.join(format!(".ilearned-encrypt-{}.db", Uuid::new_v4()));
+    let temporary = create_temporary_database(parent)?;
 
     let result = encrypt_database_inner(path, key, &temporary, source_permissions);
     if result.is_err() {
@@ -43,7 +44,6 @@ fn encrypt_database_inner(
             AppError::Storage("unable to checkpoint the plaintext database".to_string())
         })?;
 
-    create_temporary_database(temporary)?;
     source
         .execute(
             "ATTACH DATABASE ?1 AS encrypted KEY ?2",
@@ -111,22 +111,23 @@ fn validate_schema(connection: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
-fn create_temporary_database(path: &Path) -> Result<(), AppError> {
-    #[cfg(unix)]
-    let result = {
-        use std::os::unix::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-    };
-    #[cfg(not(unix))]
-    let result = OpenOptions::new().write(true).create_new(true).open(path);
-
-    result
-        .map(|_| ())
-        .map_err(|_| AppError::Storage("unable to create temporary encrypted database".to_string()))
+/// Creates a secure same-directory temporary file. `tempfile` defaults to
+/// owner-only (`0o600`) permissions on Unix and uses the platform's secure
+/// temporary-file creation defaults on targets without Unix mode bits.
+fn create_temporary_database(parent: &Path) -> Result<PathBuf, AppError> {
+    let uuid = Uuid::new_v4().to_string();
+    let temporary = Builder::new()
+        .prefix(&format!(".ilearned-encrypt-{uuid}-"))
+        .suffix(".db")
+        .tempfile_in(parent)
+        .map_err(|_| {
+            AppError::Storage("unable to create temporary encrypted database".to_string())
+        })?;
+    let (file, path) = temporary.keep().map_err(|_| {
+        AppError::Storage("unable to retain temporary encrypted database".to_string())
+    })?;
+    drop(file);
+    Ok(path)
 }
 
 fn verify_encrypted_database(path: &Path, key: &str) -> Result<(), AppError> {
@@ -135,9 +136,8 @@ fn verify_encrypted_database(path: &Path, key: &str) -> Result<(), AppError> {
         .pragma_update(None, "key", key)
         .and_then(|_| connection.pragma_update(None, "cipher_memory_security", "ON"))
         .map_err(|_| AppError::DatabaseKey("unable to verify encrypted database".to_string()))?;
-    connection
-        .execute_batch("PRAGMA cipher_integrity_check")
-        .map_err(|_| AppError::DatabaseKey("unable to verify encrypted database".to_string()))?;
+    let integrity_results = cipher_integrity_results(&connection)?;
+    validate_cipher_integrity_results(&integrity_results)?;
     validate_schema(&connection)?;
     Ok(())
 }
@@ -181,17 +181,7 @@ fn replace_source(source: &Path, temporary: &Path) -> Result<(), AppError> {
 #[cfg(windows)]
 fn replace_source(source: &Path, temporary: &Path) -> Result<(), AppError> {
     let backup = source.with_file_name(format!(".ilearned-encrypt-backup-{}.db", Uuid::new_v4()));
-    fs::rename(source, &backup).map_err(|_| {
-        AppError::Storage("unable to stage plaintext database replacement".to_string())
-    })?;
-    if fs::rename(temporary, source).is_err() {
-        let _ = fs::rename(&backup, source);
-        return Err(AppError::Storage(
-            "unable to replace plaintext database".to_string(),
-        ));
-    }
-    fs::remove_file(backup)
-        .map_err(|_| AppError::Storage("unable to remove plaintext database backup".to_string()))
+    replace_with_rollback(source, temporary, &backup, fs::rename, fs::remove_file)
 }
 
 #[cfg(all(not(unix), not(windows)))]
@@ -204,6 +194,62 @@ fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(format!("{}{}", path.display(), suffix))
 }
 
+fn cipher_integrity_results(connection: &Connection) -> Result<Vec<String>, AppError> {
+    let mut statement = connection
+        .prepare("PRAGMA cipher_integrity_check")
+        .map_err(|_| AppError::DatabaseKey("unable to verify encrypted database".to_string()))?;
+    statement
+        .query_map([], |row| row.get(0))
+        .and_then(Iterator::collect)
+        .map_err(|_| AppError::DatabaseKey("unable to verify encrypted database".to_string()))
+}
+
+fn validate_cipher_integrity_results(results: &[String]) -> Result<(), AppError> {
+    // The bundled SQLCipher build emits no row on a clean database. A returned
+    // row must explicitly report success; any diagnostic indicates corruption.
+    if results
+        .iter()
+        .all(|result| result.trim().eq_ignore_ascii_case("ok"))
+    {
+        return Ok(());
+    }
+    Err(AppError::DatabaseKey(
+        "encrypted database integrity verification failed".to_string(),
+    ))
+}
+
+#[cfg(any(windows, test))]
+fn replace_with_rollback<R, D>(
+    source: &Path,
+    temporary: &Path,
+    backup: &Path,
+    mut rename: R,
+    mut remove: D,
+) -> Result<(), AppError>
+where
+    R: FnMut(&Path, &Path) -> std::io::Result<()>,
+    D: FnMut(&Path) -> std::io::Result<()>,
+{
+    rename(source, backup).map_err(|_| {
+        AppError::Storage("unable to stage plaintext database replacement".to_string())
+    })?;
+    if rename(temporary, source).is_err() {
+        return match rename(backup, source) {
+            Ok(()) => Err(AppError::Storage(
+                "unable to replace plaintext database; source restored".to_string(),
+            )),
+            Err(_) => Err(AppError::Storage(
+                "unable to replace plaintext database and restore the source".to_string(),
+            )),
+        };
+    }
+    remove(backup).map_err(|_| {
+        AppError::Storage(
+            "encrypted database replaced but unable to remove plaintext backup".to_string(),
+        )
+    })
+}
+
 fn remove_database_files(path: &Path) {
     let _ = fs::remove_file(path);
     remove_sidecars(path);
@@ -212,4 +258,67 @@ fn remove_database_files(path: &Path) {
 fn remove_sidecars(path: &Path) {
     let _ = fs::remove_file(sidecar_path(path, "-wal"));
     let _ = fs::remove_file(sidecar_path(path, "-shm"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reported_cipher_integrity_failure_rejects_verification() {
+        assert!(validate_cipher_integrity_results(&["page 1 is corrupted".to_string()]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_database_is_owner_only_before_source_permissions_are_copied() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temporary_database(dir.path()).unwrap();
+
+        assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o077, 0);
+    }
+
+    #[test]
+    fn replacement_restore_failure_is_reported() {
+        let error = replace_with_rollback(
+            Path::new("source.db"),
+            Path::new("temporary.db"),
+            Path::new("backup.db"),
+            |from, to| match (from, to) {
+                (from, to) if from == Path::new("source.db") && to == Path::new("backup.db") => {
+                    Ok(())
+                }
+                _ => Err(std::io::Error::other("simulated failure")),
+            },
+            |_| Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("restore"));
+    }
+
+    #[test]
+    fn replacement_backup_cleanup_failure_is_reported() {
+        let error = replace_with_rollback(
+            Path::new("source.db"),
+            Path::new("temporary.db"),
+            Path::new("backup.db"),
+            |_, _| Ok(()),
+            |_| Err(std::io::Error::other("simulated cleanup failure")),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("plaintext backup"));
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn temporary_database_uses_platform_secure_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temporary_database(dir.path()).unwrap();
+
+        assert!(path.is_file());
+    }
 }

@@ -24,6 +24,7 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["full"] }
@@ -36,7 +37,6 @@ async-trait = "0.1"
 schemars = "1"
 
 [dev-dependencies]
-tempfile = "3"
 toml = "0.8"
 
 # Profile used by cargo-dist for release builds
