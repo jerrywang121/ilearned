@@ -507,6 +507,11 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         })?;
         let model = provider.model_id().to_string();
         let mut dims = provider.dimensions();
+        if dims == Some(0) {
+            return Err(AppError::EmbeddingUnavailable(
+                "embedding provider declared zero dimensions".to_string(),
+            ));
+        }
         let candidates = self.repo.list_embedding_candidates()?;
         let total = candidates.len();
         let mut migrated = 0;

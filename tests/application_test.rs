@@ -809,3 +809,29 @@ fn semantic_search_does_not_use_mismatched_vectors() {
 
     assert!(hits.is_empty());
 }
+
+#[test]
+fn migration_rejects_zero_declared_dimension_before_prune() {
+    let (_dir, base) = svc();
+    base.repo()
+        .upsert_vector("old", "id", "old-model", &[1.0, 0.0])
+        .unwrap();
+    let service = base.with_embedding_provider(TestEmbeddingProvider::new(
+        "zero-model",
+        Some(0),
+        vec![],
+        None,
+    ));
+
+    let err = service.migrate_embeddings(true).unwrap_err();
+
+    assert!(matches!(err, AppError::EmbeddingUnavailable(_)));
+    assert_eq!(
+        service
+            .repo()
+            .load_vectors(None, "old-model", 2)
+            .unwrap()
+            .len(),
+        1
+    );
+}
