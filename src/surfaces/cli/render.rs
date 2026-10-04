@@ -1,3 +1,4 @@
+use crate::application::EmbeddingMigrationSummary;
 use crate::domain::experience::Experience;
 use crate::domain::ClearSummary;
 use crate::error::AppError;
@@ -78,6 +79,30 @@ pub fn render_clear(summary: ClearSummary, json: bool) -> String {
         format!(
             "cleared {} topic(s), {} experience(s)",
             summary.topics, summary.items
+        )
+    }
+}
+
+/// Render the result of rebuilding derived embedding vectors.
+pub fn render_embedding_migration(summary: &EmbeddingMigrationSummary, json: bool) -> String {
+    if json {
+        serde_json::json!({
+            "embedding_migration": {
+                "model": summary.model,
+                "dims": summary.dims,
+                "total": summary.total,
+                "migrated": summary.migrated,
+                "pruned": summary.pruned,
+            }
+        })
+        .to_string()
+    } else {
+        let dims = summary
+            .dims
+            .map_or_else(|| "unknown".to_string(), |dims| dims.to_string());
+        format!(
+            "migrated {} of {} experience(s), model={}, dims={}, pruned {} vector(s)",
+            summary.migrated, summary.total, summary.model, dims, summary.pruned
         )
     }
 }

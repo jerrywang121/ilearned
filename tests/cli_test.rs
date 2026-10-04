@@ -2,7 +2,13 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use clap::Parser;
-use ilearned::surfaces::cli::Cli;
+use ilearned::application::MemoryService;
+use ilearned::domain::commands::AddCommand;
+use ilearned::domain::lifecycle::LifecycleConfig;
+use ilearned::embedding::FakeEmbeddingProvider;
+use ilearned::storage::SqliteRepo;
+use ilearned::surfaces::cli::commands::{Commands, EmbeddingCommands};
+use ilearned::surfaces::cli::{run_cli, Cli};
 use tempfile::TempDir;
 
 fn bin() -> std::path::PathBuf {
@@ -561,4 +567,99 @@ fn json_is_rejected_for_protocol_and_jsonl_commands() {
             args
         );
     }
+}
+
+#[test]
+fn embedding_migrate_parses_prune_yes_json() {
+    let cli = Cli::try_parse_from([
+        "ilearned",
+        "embedding",
+        "migrate",
+        "--prune",
+        "--yes",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Commands::Embedding(args) => match args.command {
+            EmbeddingCommands::Migrate(args) => {
+                assert!(args.prune);
+                assert!(args.yes);
+                assert!(args.output.json);
+            }
+        },
+        other => panic!("expected embedding command, got {other:?}"),
+    }
+}
+
+#[test]
+fn embedding_migrate_json_renders_summary() {
+    let dir = TempDir::new().unwrap();
+    let repo = SqliteRepo::open(&dir.path().join("migrate.db")).unwrap();
+    let svc = MemoryService::new(repo, LifecycleConfig::default())
+        .with_embedding_provider(FakeEmbeddingProvider::new());
+    svc.add(AddCommand {
+        topic: "migration".to_string(),
+        when_text: "when".to_string(),
+        if_text: "if".to_string(),
+        do_text: "do".to_string(),
+        check_text: "check".to_string(),
+    })
+    .unwrap();
+    let cli = Cli::try_parse_from(["ilearned", "embedding", "migrate", "--json"]).unwrap();
+    let output = run_cli(&svc, &cli.command, true).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(value["embedding_migration"]["model"], "fake-test");
+    assert_eq!(value["embedding_migration"]["dims"], 64);
+    assert_eq!(value["embedding_migration"]["total"], 1);
+    assert_eq!(value["embedding_migration"]["migrated"], 1);
+    assert_eq!(value["embedding_migration"]["pruned"], 0);
+}
+
+#[test]
+fn embedding_migrate_requires_provider() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let output = Command::new(bin())
+        .args(["--config-file", &config, "embedding", "migrate", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(value["error"]
+        .as_str()
+        .unwrap()
+        .contains("no embedding provider"));
+}
+
+#[test]
+fn embedding_migrate_refuses_prune_without_confirmation() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("t.db");
+    let config = dir.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "db = {:?}\n[embedding]\nendpoint = \"http://127.0.0.1:1/v1\"\nmodel = \"test-model\"\napi_key = \"test-key\"\ndims = 64\n",
+            db.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let mut child = Command::new(bin())
+        .args([
+            "--config-file",
+            config.to_str().unwrap(),
+            "embedding",
+            "migrate",
+            "--prune",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"n\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("not confirmed"));
 }

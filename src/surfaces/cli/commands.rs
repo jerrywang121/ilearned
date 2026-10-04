@@ -55,12 +55,38 @@ pub enum Commands {
     Export(ExportArgs),
     /// Import experiences from JSONL (--file PATH or stdin).
     Import(ImportArgs),
+    /// Rebuild derived embedding vectors with the configured provider.
+    Embedding(EmbeddingArgs),
     /// Inspect or initialize TOML configuration files.
     Config(ConfigArgs),
     /// Start REST + web + MCP on one listener.
     Serve(ServeArgs),
     /// Run as an MCP server over stdio (stdin/stdout) for harness use.
     Mcp(McpArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct EmbeddingArgs {
+    #[command(subcommand)]
+    pub command: EmbeddingCommands,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum EmbeddingCommands {
+    /// Re-embed all non-deleted experiences with the configured provider.
+    Migrate(EmbeddingMigrateArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct EmbeddingMigrateArgs {
+    /// Remove vectors for model/dimension identities other than the target after success.
+    #[arg(long)]
+    pub prune: bool,
+    /// Skip the confirmation prompt required by --prune.
+    #[arg(long)]
+    pub yes: bool,
+    #[command(flatten)]
+    pub output: JsonArgs,
 }
 
 impl Commands {
@@ -78,6 +104,9 @@ impl Commands {
             },
             Self::Export(_) => false,
             Self::Import(a) => a.output.json,
+            Self::Embedding(a) => match &a.command {
+                EmbeddingCommands::Migrate(a) => a.output.json,
+            },
             Self::Config(a) => matches!(&a.command, ConfigCommands::Show),
             Self::Serve(_) | Self::Mcp(_) => false,
         }
