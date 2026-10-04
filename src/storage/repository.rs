@@ -91,6 +91,7 @@ pub trait ExperienceRepo: Send + Sync {
 #[derive(Clone)]
 pub struct SqliteRepo {
     db: super::sqlite::Db,
+    _database_lock: std::sync::Arc<super::lock::DatabaseLock>,
 }
 
 impl SqliteRepo {
@@ -99,9 +100,11 @@ impl SqliteRepo {
     }
 
     pub fn open_with_key(path: &std::path::Path, key: Option<&str>) -> Result<Self, AppError> {
+        let database_lock = super::lock::DatabaseLock::shared(path)?;
         let conn = open_db(path, key)?;
         Ok(Self {
             db: std::sync::Arc::new(std::sync::Mutex::new(conn)),
+            _database_lock: std::sync::Arc::new(database_lock),
         })
     }
 

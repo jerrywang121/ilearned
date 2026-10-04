@@ -6,17 +6,23 @@
   before any schema access and enables `PRAGMA cipher_memory_security = ON`.
   SQLCipher's default version-4 settings are used. The key is environment-only
   and is never persisted, logged, returned, or accepted as a CLI argument.
-- A present-but-empty or non-UTF-8 `ILEARNED_DB_KEY` is invalid input. A wrong
-  key, or a key used against an existing plaintext database, is a database-key
-  startup error (CLI exit 4) and does not trigger automatic conversion. The
-  error points users to `ilearned db encrypt` without exposing key material.
+- Commands that resolve or use a present-but-empty or non-UTF-8
+  `ILEARNED_DB_KEY` reject it as invalid input (CLI exit 2); `config show`
+  intentionally bypasses database-key resolution. A wrong key, or a key used
+  against an existing plaintext database, is a database-key startup error (CLI
+  exit 4) and does not trigger automatic conversion. The error points users to
+  `ilearned db encrypt` without exposing key material.
 - SQLite at a configured path, or (when no path is configured) an existing
   `./.ilearned/ilearned.db` followed by an existing XDG data database
   (`$XDG_DATA_HOME/ilearned/ilearned.db`, or
   `~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
   exists. Explicitly configured paths may be created by `open_db`, which also
-  enables WAL, sets `busy_timeout=5000`, and records
-  `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
+   enables WAL, sets `busy_timeout=5000`, and records
+   `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
+- Each `SqliteRepo` holds a shared advisory lock on a stable sibling lock file
+  for its connection lifetime. `db encrypt` acquires that lock exclusively
+  before opening/checkpointing the source and holds it through export,
+  verification, sidecar cleanup, replacement, and temporary-output cleanup.
 - `experiences` columns: `topic, id, when_text, if_text, do_text,
   check_text, updated_at (INTEGER epoch seconds), good_count, bad_count,
   state ('active'|'inactive'|'deleted'|'forgotten'), retention_started_at
@@ -62,16 +68,20 @@ conversion of the resolved existing regular plaintext database. It requires a
 non-empty `ILEARNED_DB_KEY`; it never creates a missing source and refuses
 already-encrypted, corrupt, or unsupported files without rewriting them.
 
-The migration checkpoints/truncates plaintext WAL state, creates a temporary
+The migration acquires an exclusive per-database advisory lock, checkpoints and
+truncates plaintext WAL state, creates a temporary
 destination in the same directory, attaches it with the key, and runs
 `sqlcipher_export('encrypted')`. This copies the complete schema and contents,
 including FTS tables/triggers and lazily-created embedding rows. It then opens
 the destination with the key, runs SQLCipher integrity and ilearned schema
-checks, and only after verification atomically replaces the source. Temporary
-output is cleaned on all failure paths; stale plaintext `-wal`/`-shm` sidecars
-are removed after success and no plaintext backup is retained.
+checks, and only after verification replaces the source atomically on Unix or
+through a rollback-safe staged replacement on Windows and other platforms.
+Temporary output is cleaned on all failure paths; stale plaintext `-wal`/`-shm`
+sidecars are removed before replacement and no plaintext backup is retained.
 
-Confirmation refusal, missing/invalid key, or any migration failure leaves the
-original database unchanged. The successful result reports only the path; the
-key is never included. JSONL `export` remains a plaintext portable backup and
-is not encrypted by this feature.
+Confirmation refusal, missing/invalid key, or another pre-checkpoint refusal
+leaves the original database unchanged. A later migration failure preserves the
+logical database contents and usability, though checkpointing can change WAL
+bytes. The successful result reports only the path; the key is never included.
+JSONL `export` remains a plaintext portable backup and is not encrypted by this
+feature.

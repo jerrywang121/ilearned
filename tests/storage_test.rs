@@ -361,6 +361,24 @@ fn encrypt_database_requires_existing_nonempty_key() {
 }
 
 #[test]
+fn encrypt_database_refuses_while_a_repository_holds_the_database_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plaintext.db");
+    let repo = SqliteRepo::open(&path).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+
+    let error = encrypt_database(&path, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("in use"));
+    assert_eq!(
+        repo.get("migration", "record1").unwrap().unwrap().id,
+        "record1"
+    );
+    assert_eq!(&std::fs::read(&path).unwrap()[..16], b"SQLite format 3\0");
+}
+
+#[test]
 fn encrypt_database_failure_cleans_temporary_output() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("incomplete.db");
@@ -372,9 +390,11 @@ fn encrypt_database_failure_cleans_temporary_output() {
 
     assert!(encrypt_database(&path, "encryption-key").is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert_eq!(
-        std::fs::read_dir(dir.path()).unwrap().count(),
-        1,
-        "failed migration must remove its temporary database and sidecars"
-    );
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ilearned-encrypt-")
+    }));
 }

@@ -99,11 +99,12 @@ initialization, migrations, and all surface adapters.
   and schema setup. The key is never stored in TOML or configuration output.
 - Plaintext-to-encrypted conversion is explicit (`ilearned db encrypt`), runs
   before keyed service construction, and uses `sqlcipher_export` followed by
-  SQLCipher integrity and schema verification. Only a verified destination is
-  atomically substituted for the source; failed conversions leave the source
-  usable and do not retain a plaintext backup. Stale plaintext `-wal`/`-shm`
-  sidecars are removed after successful replacement. JSONL exports are outside
-  this database-encryption boundary.
+  SQLCipher integrity and schema verification. A verified destination replaces
+  the source atomically on Unix; Windows and other platforms use a rollback-safe
+  staged replacement. Failed conversions preserve the logical database contents
+  and usability and do not retain a plaintext backup. Stale plaintext
+  `-wal`/`-shm` sidecars are removed before replacement. JSONL exports are
+  outside this database-encryption boundary.
 
 Full design: `docs/superpowers/specs/2026-09-27-initial-architecture-design.md`.
 Implementation plan: `docs/superpowers/plans/2026-09-27-initial-architecture.md`.

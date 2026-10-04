@@ -13,7 +13,16 @@ const REQUIRED_SCHEMA_OBJECTS: [&str; 3] = ["schema_migrations", "experiences", 
 
 /// Convert an existing ilearned plaintext SQLite database to SQLCipher format.
 pub fn encrypt_database(path: &Path, key: &str) -> Result<(), AppError> {
-    validate_input(path, key)?;
+    if key.is_empty() {
+        return Err(AppError::InvalidInput(
+            "database encryption key must not be empty".to_string(),
+        ));
+    }
+
+    // Hold this across every migration stage. The stable sibling lock remains
+    // locked even after the source database is atomically replaced.
+    let _database_lock = super::lock::DatabaseLock::exclusive(path)?;
+    validate_input(path)?;
 
     let source_permissions = source_permissions(path)?;
     let parent = path
@@ -38,11 +47,18 @@ fn encrypt_database_inner(
 ) -> Result<(), AppError> {
     let source = open_existing(path)?;
     validate_schema(&source)?;
-    source
-        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+    let (busy, _, _) = source
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
         .map_err(|_| {
             AppError::Storage("unable to checkpoint the plaintext database".to_string())
         })?;
+    validate_checkpoint_result(busy)?;
 
     source
         .execute(
@@ -59,17 +75,13 @@ fn encrypt_database_inner(
 
     verify_encrypted_database(temporary, key)?;
     apply_source_permissions(temporary, source_permissions)?;
-    replace_source(path, temporary)?;
-    remove_sidecars(path);
-    Ok(())
+    // Remove plaintext sidecars while the plaintext source is still intact.
+    // A failure leaves its logical contents usable and prevents replacement.
+    remove_sidecars(path)?;
+    replace_source(path, temporary)
 }
 
-fn validate_input(path: &Path, key: &str) -> Result<(), AppError> {
-    if key.is_empty() {
-        return Err(AppError::InvalidInput(
-            "database encryption key must not be empty".to_string(),
-        ));
-    }
+fn validate_input(path: &Path) -> Result<(), AppError> {
     let metadata = fs::metadata(path).map_err(|_| {
         AppError::InvalidInput("database encryption requires an existing regular file".to_string())
     })?;
@@ -93,6 +105,15 @@ fn validate_input(path: &Path, key: &str) -> Result<(), AppError> {
 fn open_existing(path: &Path) -> Result<Connection, AppError> {
     Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_| AppError::Storage("unable to open plaintext database".to_string()))
+}
+
+fn validate_checkpoint_result(busy: i64) -> Result<(), AppError> {
+    if busy == 0 {
+        return Ok(());
+    }
+    Err(AppError::Storage(
+        "plaintext database checkpoint is busy".to_string(),
+    ))
 }
 
 fn validate_schema(connection: &Connection) -> Result<(), AppError> {
@@ -270,12 +291,22 @@ where
 
 fn remove_database_files(path: &Path) {
     let _ = fs::remove_file(path);
-    remove_sidecars(path);
+    let _ = remove_sidecars(path);
 }
 
-fn remove_sidecars(path: &Path) {
-    let _ = fs::remove_file(sidecar_path(path, "-wal"));
-    let _ = fs::remove_file(sidecar_path(path, "-shm"));
+fn remove_sidecars(path: &Path) -> Result<(), AppError> {
+    for suffix in ["-wal", "-shm"] {
+        match fs::remove_file(sidecar_path(path, suffix)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(AppError::Storage(
+                    "unable to remove plaintext database sidecars".to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -285,6 +316,24 @@ mod tests {
     #[test]
     fn reported_cipher_integrity_failure_rejects_verification() {
         assert!(validate_cipher_integrity_results(&["page 1 is corrupted".to_string()]).is_err());
+    }
+
+    #[test]
+    fn busy_checkpoint_is_rejected() {
+        let error = validate_checkpoint_result(1).unwrap_err();
+
+        assert!(error.to_string().contains("checkpoint is busy"));
+    }
+
+    #[test]
+    fn sidecar_cleanup_failure_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let database = dir.path().join("database.db");
+        fs::create_dir(sidecar_path(&database, "-wal")).unwrap();
+
+        let error = remove_sidecars(&database).unwrap_err();
+
+        assert!(error.to_string().contains("sidecars"));
     }
 
     #[cfg(unix)]

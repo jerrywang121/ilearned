@@ -2,6 +2,7 @@ pub mod embeddings;
 pub mod encryption;
 pub mod fts;
 pub mod lifecycle;
+pub(crate) mod lock;
 pub mod repository;
 pub mod sqlite;
 

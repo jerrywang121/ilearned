@@ -141,9 +141,10 @@ plaintext database with a key. The user-facing message will explain that the
 database may need `ilearned db encrypt`; it will not include the key.
 
 The CLI maps key/storage failures to the existing internal/storage exit-code
-contract (exit 4). Invalid empty/non-UTF-8 environment values remain invalid
-input (exit 2). HTTP, web, and MCP startup behavior continues to report the
-shared initialization failure through their existing startup path.
+contract (exit 4). Commands that resolve or use an invalid empty/non-UTF-8
+environment value fail as invalid input (exit 2); `config show` intentionally
+bypasses database-key resolution. HTTP, web, and MCP startup behavior continues
+to report the shared initialization failure through their existing startup path.
 
 ## Plaintext-to-encrypted migration
 
@@ -177,14 +178,14 @@ the source database must initially be opened without a key. It:
    triggers, schema metadata, and lazily-created embedding rows.
 4. Close the source and destination, open the temporary destination with the
    key, run SQLCipher integrity and ilearned schema checks, and close it.
-5. Replace the source only after verification succeeds using a
-   same-filesystem, platform-appropriate atomic/rollback-safe replacement.
-   On Unix, copy the source mode bits to the temporary file before the
-   replacement; on other platforms retain the temporary file's owner-only
+5. Remove stale plaintext `-wal`/`-shm` sidecars after verification but before
+   replacement; failure leaves the plaintext source logically usable and aborts
+   without reporting success.
+6. Replace the source only after verification and sidecar cleanup succeed:
+   atomically on Unix and with a rollback-safe staged replacement on Windows and
+   other platforms. On Unix, copy the source mode bits to the temporary file
+   before replacement; on other platforms retain the temporary file's owner-only
    default permissions.
-6. Remove stale plaintext `-wal`/`-shm` sidecars after successful replacement
-   and clean up the temporary path. Failure before replacement leaves the
-   original database usable and does not report success.
 
 The operation does not retain a plaintext backup by default. Users who need a
 portable backup should use the existing JSONL export before conversion; that
@@ -194,7 +195,9 @@ export is intentionally outside the database encryption boundary.
 
 Successful JSON output will identify the encrypted database path/result without
 including key material. Human output will use the existing concise CLI style.
-Confirmation refusal or missing/invalid key leaves the source unchanged.
+Confirmation refusal, a missing/invalid key, and other pre-checkpoint refusal
+paths leave the source unchanged. Later failures preserve logical contents and
+usability, although checkpointing may change WAL bytes.
 
 Running the command against an already encrypted or unsupported file refuses
 the operation instead of trying to rewrite it. Normal keyed startup can then
@@ -213,9 +216,9 @@ plaintext files only.
   migration guidance.
 - Existing schema migrations, FTS synchronization/rebuild, and embedding rows
   remain intact after conversion.
-- Conversion copies the full database, verifies the encrypted destination,
-  removes stale sidecars, and leaves the source unchanged when export or
-  verification fails.
+- Conversion copies the full database, verifies the encrypted destination, and
+  removes stale sidecars. Pre-checkpoint refusal leaves the source unchanged;
+  later failure preserves its logical contents and usability.
 - Already-encrypted and unsupported source files are refused without mutation.
 
 ### CLI/config tests
