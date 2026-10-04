@@ -18,12 +18,16 @@
   lifecycle eligibility applied after the match. Invalid `MATCH` syntax
   maps to `AppError::InvalidFtsSyntax` (HTTP 400 / CLI exit 2).
 - `embeddings(topic, id, model, dims, vec BLOB LE-f32)` keyed
-  `(topic,id,model)` (`vec` is a little-endian f32 blob; `dims` is the
-  vector length). The table is created lazily by `ensure_table` on
-  first vector op — it is NOT part of the base migrations and has NO
-  foreign key to `experiences`; embedding rows for expired records are
-  removed explicitly by `purge_expired` alongside the experience and FTS
-  rows (there is no cascade).
+  `(topic,id,model,dims)` (`vec` is a little-endian f32 blob; `dims` is the
+  vector length). The table is created lazily by `ensure_table` on first
+  vector op — it is NOT part of the base migrations and has NO foreign key to
+  `experiences`. If an existing database has the former model-only primary
+  key, `ensure_table` rebuilds the table transactionally and preserves all
+  rows. Exact model-and-dimension filtering prevents incompatible vectors
+  from being loaded together. Embedding rows for expired records are removed
+  explicitly by `purge_expired` alongside the experience and FTS rows (there
+  is no cascade); migration pruning removes non-target vector identities only
+  after a complete successful re-embedding run.
 - `update()` clears `retention_started_at`; the service restores
   `inactive`/`forgotten` records to `active` with a fresh `updated_at`
   before calling it (on `update`/`promote`/`demote`).

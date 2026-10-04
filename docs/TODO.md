@@ -25,7 +25,8 @@ Ordered implementation milestones (see `docs/superpowers/plans/2026-09-27-initia
 ## Follow-ups (post first-release)
 
 - Documented maximum search limit tuning (`MAX_LIMIT`).
-- Embedding model/dimension migration path.
+- ~~Embedding model/dimension migration path.~~ Done: `embedding migrate`
+  stages vectors by `(model, dims)` and supports confirmed pruning.
 - ~~Backup/export story for the local SQLite file.~~ Done: portable
   JSONL `export`/`import` round-trip (`--file`, `--topic`/`--deep`,
   `--merge`, new/updated/errors report). SQLite file-copy backup

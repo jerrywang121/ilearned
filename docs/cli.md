@@ -16,6 +16,7 @@ ilearned demote --topic TOPIC --id ID [--json]
 ilearned clear (--topic TOPIC | --all) [--yes] [--json]
 ilearned export [--topic TOPIC] [--deep] [--file PATH]
 ilearned import [--file PATH] [--merge] [--json]
+ilearned embedding migrate [--prune] [--yes] [--json]
 ilearned config show
 ilearned config init [-g] [--force | -f]
 ilearned serve [--bind ADDR]
@@ -104,6 +105,19 @@ ilearned mcp
   When endpoint+model+key are all present, the binary builds an
   OpenAI-compatible provider and `search --semantic` works; otherwise
   semantic queries exit 3.
+- `embedding migrate` rebuilds derived vectors with the currently configured
+  provider. It processes every non-deleted experience, including inactive and
+  forgotten records, and excludes deleted records. Vectors are identified by
+  `(model, dims)`; returned dimensions must match the configured dimension.
+  Existing vector identities remain in place while the target identity is
+  staged. A provider, dimension, or storage failure stops the run without
+  pruning, while successful staged rows remain for a safe retry. On success,
+  JSON output is
+  `{"embedding_migration":{"model":"...","dims":N,"total":N,"migrated":N,"pruned":N}}`.
+  Human output reports the same counts (`dims=unknown` is used when a custom
+  provider cannot declare a dimension). `--prune` removes non-target vector
+  identities only after success and requires `--yes` or an interactive `y/N`
+  confirmation; refusal exits 2 and does not run the migration.
 - In JSON mode, `add` returns `{"added":{"topic":"...","id":"..."}}`,
   `update` returns `{"modified":{"topic":"...","id":"..."}}`, and
   `delete` returns `{"deleted":{"topic":"...","id":"..."}}` to confirm

@@ -30,9 +30,10 @@ initialization, migrations, and all surface adapters.
 - `domain` — `Experience`, lifecycle state, validated commands, search input.
   No transport or database dependencies.
 - `application` — `MemoryService` implementing `get`, `search`, `add`,
-  `update`, `delete`, `promote`, `demote`, `clear`, `list_topics`. The only entry point
+  `update`, `delete`, `promote`, `demote`, `clear`, `list_topics`, and the
+  CLI-only `migrate_embeddings` maintenance operation. The only entry point
   for adapters. Generic over `R: ExperienceRepo + VectorStore`; semantic
-  search, cosine, and RRF (`k=60`) live here. `add` retries only on
+  search, cosine, RRF (`k=60`), and embedding migration rules live here. `add` retries only on
   primary-key/UNIQUE violations (other storage errors propagate); unknown
   DB `state` values surface as storage errors instead of defaulting.
 - `storage` — SQLite connection, migrations, repositories, FTS5 queries,
@@ -83,6 +84,14 @@ initialization, migrations, and all surface adapters.
 - Embedding failure on `add`/`update` never rolls back the canonical write.
 - A semantic query that cannot obtain an embedding fails typed — never
   silently degrades to text-only search.
+- Embeddings are identified by `(model, dims)` and semantic search loads only
+  the exact query identity; mismatched dimensions are never truncated for
+  cosine scoring.
+- `embedding migrate` re-embeds every non-deleted experience, including
+  inactive and forgotten records, stages new vectors without changing
+  canonical records, and retains old identities unless a completely
+  successful run uses confirmed `--prune`. It is a CLI-only maintenance
+  operation; HTTP and MCP do not expose it.
 
 Full design: `docs/superpowers/specs/2026-09-27-initial-architecture-design.md`.
 Implementation plan: `docs/superpowers/plans/2026-09-27-initial-architecture.md`.
