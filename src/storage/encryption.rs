@@ -24,14 +24,20 @@ pub fn encrypt_database(path: &Path, key: &str) -> Result<(), AppError> {
     let _database_lock = super::lock::DatabaseLock::exclusive(path)?;
     validate_input(path)?;
 
+    #[cfg(unix)]
     let source_permissions = source_permissions(path)?;
+    #[cfg(not(unix))]
+    source_permissions(path)?;
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let temporary = create_temporary_database(parent)?;
 
+    #[cfg(unix)]
     let result = encrypt_database_inner(path, key, &temporary, source_permissions);
+    #[cfg(not(unix))]
+    let result = encrypt_database_inner(path, key, &temporary, ());
     if result.is_err() {
         remove_database_files(&temporary);
     }
@@ -202,7 +208,13 @@ fn replace_source(source: &Path, temporary: &Path) -> Result<(), AppError> {
 #[cfg(windows)]
 fn replace_source(source: &Path, temporary: &Path) -> Result<(), AppError> {
     let backup = source.with_file_name(format!(".ilearned-encrypt-backup-{}.db", Uuid::new_v4()));
-    replace_with_rollback(source, temporary, &backup, fs::rename, fs::remove_file)
+    replace_with_rollback(
+        source,
+        temporary,
+        &backup,
+        |from, to| fs::rename(from, to),
+        |path| fs::remove_file(path),
+    )
 }
 
 #[cfg(all(not(unix), not(windows)))]
@@ -345,6 +357,21 @@ mod tests {
         let path = create_temporary_database(dir.path()).unwrap();
 
         assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o077, 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_replace_source_accepts_real_filesystem_callbacks() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source.db");
+        let temporary = directory.path().join("temporary.db");
+        fs::write(&source, b"plaintext").unwrap();
+        fs::write(&temporary, b"encrypted").unwrap();
+
+        replace_source(&source, &temporary).unwrap();
+
+        assert_eq!(fs::read(&source).unwrap(), b"encrypted");
+        assert!(!temporary.exists());
     }
 
     #[test]

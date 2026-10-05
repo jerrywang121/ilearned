@@ -665,8 +665,15 @@ fn config_show_reports_resolved_values_and_existing_sources_without_a_database()
     assert_eq!(value["config"]["active_days"], 11);
     assert_eq!(value["config"]["forget_days"], 22);
     let files = value["config_files"].as_array().unwrap();
+    let global = std::fs::canonicalize(global).unwrap();
+    let explicit = std::fs::canonicalize(explicit).unwrap();
     assert!(
-        files.iter().any(|path| path.as_str() == global.to_str()),
+        files.iter().any(|path| {
+            path.as_str()
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .as_ref()
+                == Some(&global)
+        }),
         "global config path missing from {files:?}"
     );
     assert!(
@@ -676,7 +683,12 @@ fn config_show_reports_resolved_values_and_existing_sources_without_a_database()
         "local config path missing from {files:?}"
     );
     assert!(
-        files.iter().any(|path| path.as_str() == explicit.to_str()),
+        files.iter().any(|path| {
+            path.as_str()
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .as_ref()
+                == Some(&explicit)
+        }),
         "explicit config path missing from {files:?}"
     );
 }
@@ -785,9 +797,10 @@ fn config_init_global_uses_xdg_config_path() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    let reported = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        global.to_string_lossy()
+        std::fs::canonicalize(reported).unwrap(),
+        std::fs::canonicalize(&global).unwrap()
     );
     assert!(
         global.is_file(),
