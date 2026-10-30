@@ -71,22 +71,35 @@ struct BaseTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}li{margin:.6em 0;border-bottom:1px solid #ddd;padding-bottom:.4em}.meta{color:#666;font-size:.9em}</style>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.ops{white-space:nowrap}.ops form{display:inline}.delete-op{color:red}</style>
 </head><body>
 <h1>ilearned</h1>
-<form method="get" action="/">
+<form id="search" method="get" action="/">
 <input name="q" value="{{ query }}" placeholder="search text">
 <input name="topic" value="{{ topic }}" placeholder="topic">
 <label><input type="checkbox" name="deep" value="true" {% if deep %}checked{% endif %}> deep</label>
 <button type="submit">Search</button>
 </form>
 <p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a></p>
-<ul>
+<div class="table-wrap"><table>
+<thead><tr><th>Topic</th><th>When</th><th>If</th><th>Do</th><th>Check</th><th>Ops</th></tr></thead>
+<tbody>
 {% for e in results %}
-<li><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">{{ e.when_text }} — {{ e.check_text }}</a>
-<span class="meta">{{ e.topic }} · good {{ e.good_count }} · bad {{ e.bad_count }} · {{ e.state_str() }}</span></li>
+<tr>
+<td><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">{{ e.topic }}</a></td>
+<td>{{ e.when_text }}</td>
+<td>{{ e.if_text }}</td>
+<td>{{ e.do_text }}</td>
+<td>{{ e.check_text }}</td>
+<td class="ops">
+<a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form>
+<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form>
+</td>
+</tr>
 {% endfor %}
-</ul>
+</tbody></table></div>
 </body></html>"#,
     ext = "html"
 )]
@@ -151,14 +164,14 @@ struct AddTemplate;
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned · edit</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}</style>
+<style>body{font-family:sans-serif;max-width:96vw;box-sizing:border-box;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}textarea{display:block;width:100%;min-height:8em;box-sizing:border-box}</style>
 </head><body>
 <h1>ilearned · edit {{ e.topic }}/{{ e.id }}</h1>
 <form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">
-<label>when <input name="when_text" value="{{ e.when_text }}"></label>
-<label>if <input name="if_text" value="{{ e.if_text }}"></label>
-<label>do <input name="do_text" value="{{ e.do_text }}"></label>
-<label>check <input name="check" value="{{ e.check_text }}"></label>
+<label>when <textarea name="when_text">{{ e.when_text }}</textarea></label>
+<label>if <textarea name="if_text">{{ e.if_text }}</textarea></label>
+<label>do <textarea name="do_text">{{ e.do_text }}</textarea></label>
+<label>check <textarea name="check">{{ e.check_text }}</textarea></label>
 <button type="submit">Save</button>
 </form>
 <p><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">back</a></p>
@@ -282,7 +295,7 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<IndexParams>,
 ) -> Result<Html<String>, WebErr> {
-    let results = svc
+    let mut results = svc
         .search(&SearchQuery {
             topic: p.topic.clone().filter(|s| !s.trim().is_empty()),
             text: p.q.clone().filter(|s| !s.trim().is_empty()),
@@ -292,6 +305,11 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
             deep: p.deep.unwrap_or(false),
         })
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    results.sort_by(|left, right| {
+        left.topic
+            .cmp(&right.topic)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     let t = SearchTemplate {
         query: p.q.unwrap_or_default(),
         topic: p.topic.unwrap_or_default(),

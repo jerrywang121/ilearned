@@ -299,3 +299,193 @@ async fn forms_validate_and_confirm() {
         .unwrap();
     assert_eq!(still.as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn index_renders_topic_sorted_table_with_operations() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let mut ids = Vec::new();
+
+    for topic in ["alpha", "beta", "zeta"] {
+        if topic == "zeta" {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        let created: serde_json::Value = client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({
+                "topic": topic,
+                "when": format!("when {}", topic),
+                "if": format!("if {}", topic),
+                "do": format!("do {}", topic),
+                "check": format!("check {}", topic)
+            }))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        ids.push((topic.to_owned(), created["id"].as_str().unwrap().to_owned()));
+    }
+
+    let index = client
+        .get(srv.url("/"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    for column in ["Topic", "When", "If", "Do", "Check", "Ops"] {
+        assert!(
+            index.contains(&format!("<th>{}</th>", column)),
+            "missing {} column",
+            column
+        );
+    }
+    assert!(
+        index.contains(r#"#search input[name="q"],#search input[name="topic"]{width:40ch"#),
+        "search and topic filters should be wider"
+    );
+    assert!(index.contains(r#"<div class="table-wrap"><table>"#));
+    assert!(index.contains(".table-wrap{overflow-x:auto}"));
+    assert!(index.contains("min-width:50em"));
+
+    let alpha = index.find("alpha").expect("alpha topic is listed");
+    let beta = index.find("beta").expect("beta topic is listed");
+    let zeta = index.find("zeta").expect("zeta topic is listed");
+    assert!(
+        alpha < beta && beta < zeta,
+        "rows should be ordered by topic"
+    );
+
+    for symbol in ["✎", "★", "☆", "✘"] {
+        assert!(index.contains(symbol), "missing {} operation", symbol);
+    }
+    assert!(index.contains(r#"class="delete-op""#));
+    assert!(
+        index.contains("color:red"),
+        "delete operation should be red"
+    );
+
+    let alpha_id = ids
+        .iter()
+        .find(|(topic, _)| topic.as_str() == "alpha")
+        .map(|(_, id)| id)
+        .unwrap();
+    for label in ["Edit", "Promote", "Demote", "Delete"] {
+        assert!(index.contains(&format!(r#"aria-label="{} alpha/{}""#, label, alpha_id)));
+    }
+    assert!(index.contains(&format!(r#"href="/experiences/alpha/{}/edit""#, alpha_id)));
+    for operation in ["promote", "demote", "delete"] {
+        assert!(index.contains(&format!(
+            r#"action="/experiences/alpha/{}/{}""#,
+            alpha_id, operation
+        )));
+    }
+}
+
+#[tokio::test]
+async fn edit_form_renders_wide_multiline_fields() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let created: serde_json::Value = client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({
+            "topic": "forms",
+            "when": "arrival scenario",
+            "if": "trigger observed",
+            "do": "take action",
+            "check": "verify result"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    let edit = client
+        .get(srv.url(&format!("/experiences/forms/{}/edit", id)))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    for (name, value) in [
+        ("when_text", "arrival scenario"),
+        ("if_text", "trigger observed"),
+        ("do_text", "take action"),
+        ("check", "verify result"),
+    ] {
+        assert!(edit.contains(&format!(
+            r#"<textarea name="{}">{}</textarea>"#,
+            name, value
+        )));
+    }
+    assert!(
+        edit.contains("max-width:96vw"),
+        "edit page should use a wide layout"
+    );
+    assert!(edit.contains("textarea{display:block;width:100%"));
+}
+
+#[tokio::test]
+async fn index_row_actions_encode_nested_topics() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let created: serde_json::Value = client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({
+            "topic": "nested/child",
+            "when": "nested scenario",
+            "if": "trigger observed",
+            "do": "take action",
+            "check": "verify result"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    let index = client
+        .get(srv.url("/"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    for path in [
+        format!(r#"href="/experiences/nested%2Fchild/{}/edit""#, id),
+        format!(r#"action="/experiences/nested%2Fchild/{}/promote""#, id),
+        format!(r#"action="/experiences/nested%2Fchild/{}/demote""#, id),
+        format!(r#"action="/experiences/nested%2Fchild/{}/delete""#, id),
+    ] {
+        assert!(
+            index.contains(&path),
+            "missing encoded action path: {}",
+            path
+        );
+    }
+}

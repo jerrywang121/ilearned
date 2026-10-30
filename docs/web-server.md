@@ -36,6 +36,13 @@ REST, web, and HTTP MCP do not expose configuration controls.
   | `GET/POST` | `/clear` | Requires `confirm=yes` plus a topic or `all=true`, else 400 |
   | `GET` | `/topics` | Topic list/search page; query `q,level,deep,limit,offset`; linked from `/` |
 
+- The `/` search/browse page displays experiences in a topic-ascending table
+  with `Topic`, `When`, `If`, `Do`, `Check`, and `Ops` columns. Each row offers
+  `✎` edit, `★` promote, `☆` demote, and red `✘` delete actions; the search and
+  topic filters are widened, and the table scrolls horizontally on narrow
+  screens. The edit form uses full-width multiline textareas for `when`, `if`,
+  `do`, and `check`.
+
 - Since topics may contain `/`, links and redirects percent-encode the topic as
   one path segment (for example, `jump/down/up` becomes
   `jump%2Fdown%2Fup`). Clients constructing detail or action URLs should encode
