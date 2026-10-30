@@ -388,6 +388,87 @@ async fn index_renders_topic_sorted_table_with_operations() {
             alpha_id, operation
         )));
     }
+
+    let alpha_row_start = index
+        .find(&format!(r#"href="/experiences/alpha/{}""#, alpha_id))
+        .expect("alpha detail link is present");
+    let ops_start = alpha_row_start
+        + index[alpha_row_start..]
+            .find(r#"<td class="ops">"#)
+            .expect("alpha operations cell is present");
+    let ops_end = ops_start
+        + index[ops_start..]
+            .find("</td>")
+            .expect("operations cell is closed");
+    let alpha_ops = &index[ops_start..ops_end];
+    let ops_lines: Vec<_> = alpha_ops
+        .split(r#"<div class="ops-line">"#)
+        .skip(1)
+        .map(|line| line.split("</div>").next().unwrap())
+        .collect();
+    assert_eq!(ops_lines.len(), 3, "operations should occupy three lines");
+    assert!(ops_lines[0].contains(&format!("/experiences/alpha/{}/edit", alpha_id)));
+    assert!(ops_lines[0].contains(&format!("/experiences/alpha/{}/delete", alpha_id)));
+    assert!(ops_lines[1].contains(&format!("/experiences/alpha/{}/promote", alpha_id)));
+    assert!(ops_lines[1].contains(r#">★</button>"#));
+    assert!(ops_lines[1].contains(r#"class="op-count" aria-label="Good count: 1">1</span>"#));
+    assert!(ops_lines[2].contains(&format!("/experiences/alpha/{}/demote", alpha_id)));
+    assert!(ops_lines[2].contains(r#">☆</button>"#));
+    assert!(ops_lines[2].contains(r#"class="op-count" aria-label="Bad count: 0">0</span>"#));
+}
+
+#[tokio::test]
+async fn index_truncates_experience_fields_at_110_characters() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let when = "a".repeat(110);
+    let if_text = "猫".repeat(111);
+    let do_text = "c".repeat(111);
+    let check_text = "d".repeat(111);
+
+    client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({
+            "topic": "truncate",
+            "when": when,
+            "if": if_text,
+            "do": do_text,
+            "check": check_text
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let index = client
+        .get(srv.url("/"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    assert!(
+        index.contains(&format!("{}…", "猫".repeat(110))),
+        "fields over the limit should end with an ellipsis"
+    );
+    for (value, expected) in [
+        ("a".repeat(110), "a".repeat(110)),
+        ("猫".repeat(111), format!("{}…", "猫".repeat(110))),
+        ("c".repeat(111), format!("{}…", "c".repeat(110))),
+        ("d".repeat(111), format!("{}…", "d".repeat(110))),
+    ] {
+        assert!(
+            index.contains(&format!(r#"<td class="experience-text">{}</td>"#, expected)),
+            "unexpected table display for a {}-character value",
+            value.chars().count()
+        );
+    }
+    assert!(index.contains(".experience-text{font-size:.85em}"));
 }
 
 #[tokio::test]

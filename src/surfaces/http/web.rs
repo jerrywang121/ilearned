@@ -71,7 +71,7 @@ struct BaseTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.ops{white-space:nowrap}.ops form{display:inline}.delete-op{color:red}</style>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
 </head><body>
 <h1>ilearned</h1>
 <form id="search" method="get" action="/">
@@ -87,15 +87,14 @@ struct BaseTemplate {
 {% for e in results %}
 <tr>
 <td><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">{{ e.topic }}</a></td>
-<td>{{ e.when_text }}</td>
-<td>{{ e.if_text }}</td>
-<td>{{ e.do_text }}</td>
-<td>{{ e.check_text }}</td>
+<td class="experience-text">{{ e.when_text }}</td>
+<td class="experience-text">{{ e.if_text }}</td>
+<td class="experience-text">{{ e.do_text }}</td>
+<td class="experience-text">{{ e.check_text }}</td>
 <td class="ops">
-<a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a>
-<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form>
-<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form>
-<form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form>
+<div class="ops-line"><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form><span class="op-count" aria-label="Good count: {{ e.good_count }}">{{ e.good_count }}</span></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form><span class="op-count" aria-label="Bad count: {{ e.bad_count }}">{{ e.bad_count }}</span></div>
 </td>
 </tr>
 {% endfor %}
@@ -107,7 +106,43 @@ struct SearchTemplate {
     query: String,
     topic: String,
     deep: bool,
-    results: Vec<Experience>,
+    results: Vec<ExperienceTableRow>,
+}
+
+struct ExperienceTableRow {
+    topic: String,
+    id: String,
+    when_text: String,
+    if_text: String,
+    do_text: String,
+    check_text: String,
+    good_count: u64,
+    bad_count: u64,
+}
+
+impl From<Experience> for ExperienceTableRow {
+    fn from(experience: Experience) -> Self {
+        Self {
+            topic: experience.topic,
+            id: experience.id,
+            when_text: truncate_experience_cell(&experience.when_text),
+            if_text: truncate_experience_cell(&experience.if_text),
+            do_text: truncate_experience_cell(&experience.do_text),
+            check_text: truncate_experience_cell(&experience.check_text),
+            good_count: experience.good_count,
+            bad_count: experience.bad_count,
+        }
+    }
+}
+
+fn truncate_experience_cell(value: &str) -> String {
+    const MAX_CHARS: usize = 110;
+    let mut chars = value.chars();
+    let mut truncated: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        truncated.push('…');
+    }
+    truncated
 }
 
 #[derive(Template)]
@@ -310,6 +345,7 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
             .cmp(&right.topic)
             .then_with(|| left.id.cmp(&right.id))
     });
+    let results = results.into_iter().map(ExperienceTableRow::from).collect();
     let t = SearchTemplate {
         query: p.q.unwrap_or_default(),
         topic: p.topic.unwrap_or_default(),

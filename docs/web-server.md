@@ -38,10 +38,12 @@ REST, web, and HTTP MCP do not expose configuration controls.
 
 - The `/` search/browse page displays experiences in a topic-ascending table
   with `Topic`, `When`, `If`, `Do`, `Check`, and `Ops` columns. Each row offers
-  `✎` edit, `★` promote, `☆` demote, and red `✘` delete actions; the search and
-  topic filters are widened, and the table scrolls horizontally on narrow
-  screens. The edit form uses full-width multiline textareas for `when`, `if`,
-  `do`, and `check`.
+  `When`, `If`, `Do`, and `Check` text in a smaller font, capped at 110
+  characters plus `…` when longer; full values are preserved. The `Ops` cell
+  uses three lines: `✎` edit and red `✘` delete; `★` promote with the good
+  count; and `☆` demote with the bad count. Search/topic filters are widened,
+  and the table scrolls horizontally on narrow screens. The edit form uses
+  full-width multiline textareas for `when`, `if`, `do`, and `check`.
 
 - Since topics may contain `/`, links and redirects percent-encode the topic as
   one path segment (for example, `jump/down/up` becomes
