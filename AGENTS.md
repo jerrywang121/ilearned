@@ -45,7 +45,9 @@ lifecycle transitions, or ranking logic.
   material. A key never causes automatic conversion of a plaintext database.
 - Plaintext conversion is explicit and confirmation-gated through
   `ilearned db encrypt [--yes] [--json]`, using `sqlcipher_export` and verified
-  replacement; ordinary failures preserve the source and clean temporary output.
+  replacement. It accepts only a regular database file with a single hard link;
+  a database path that is a symbolic link or a multiply hard-linked file is
+  rejected. Ordinary failures preserve the source and clean temporary output.
   If Windows filesystem errors also prevent rollback, the error identifies the
   possible plaintext backup path for manual recovery. JSONL exports are not
   encrypted by this feature.

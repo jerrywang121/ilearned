@@ -12,6 +12,7 @@ const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 const REQUIRED_SCHEMA_OBJECTS: [&str; 3] = ["schema_migrations", "experiences", "experiences_fts"];
 
 /// Convert an existing ilearned plaintext SQLite database to SQLCipher format.
+/// The database path must not be a symlink and the file must have one hard link.
 pub fn encrypt_database(path: &Path, key: &str) -> Result<(), AppError> {
     if key.is_empty() {
         return Err(AppError::InvalidInput(
@@ -88,14 +89,25 @@ fn encrypt_database_inner(
 }
 
 fn validate_input(path: &Path) -> Result<(), AppError> {
-    let metadata = fs::metadata(path).map_err(|_| {
+    let metadata = fs::symlink_metadata(path).map_err(|_| {
         AppError::InvalidInput("database encryption requires an existing regular file".to_string())
     })?;
-    if !metadata.is_file() {
+    if metadata.file_type().is_symlink() {
+        return Err(AppError::InvalidInput(
+            "database encryption does not support symbolic links".to_string(),
+        ));
+    }
+    if !metadata.file_type().is_file() {
         return Err(AppError::InvalidInput(
             "database encryption requires an existing regular file".to_string(),
         ));
     }
+    if hard_link_count(path, &metadata)? > 1 {
+        return Err(AppError::InvalidInput(
+            "database encryption does not support multiple hard links".to_string(),
+        ));
+    }
+
     let mut header = [0; SQLITE_HEADER.len()];
     File::open(path)
         .and_then(|mut file| file.read_exact(&mut header))
@@ -106,6 +118,40 @@ fn validate_input(path: &Path) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn hard_link_count(_path: &Path, metadata: &fs::Metadata) -> Result<u64, AppError> {
+    use std::os::unix::fs::MetadataExt as _;
+    Ok(metadata.nlink())
+}
+
+#[cfg(windows)]
+fn hard_link_count(path: &Path, _metadata: &fs::Metadata) -> Result<u64, AppError> {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let file = File::open(path)
+        .map_err(|_| AppError::Storage("unable to inspect database link count".to_string()))?;
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle stays open for this call and `information` is a valid,
+    // writable output structure for `GetFileInformationByHandle`.
+    let succeeded = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) };
+    if succeeded == 0 {
+        return Err(AppError::Storage(
+            "unable to inspect database link count".to_string(),
+        ));
+    }
+    Ok(u64::from(information.nNumberOfLinks))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn hard_link_count(_path: &Path, _metadata: &fs::Metadata) -> Result<u64, AppError> {
+    Err(AppError::InvalidInput(
+        "database encryption cannot verify the database link count on this platform".to_string(),
+    ))
 }
 
 fn open_existing(path: &Path) -> Result<Connection, AppError> {

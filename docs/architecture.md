@@ -100,8 +100,10 @@ initialization, migrations, and all surface adapters.
 - Plaintext-to-encrypted conversion is explicit (`ilearned db encrypt`), runs
   before keyed service construction, and uses `sqlcipher_export` followed by
   SQLCipher integrity and schema verification. A verified destination replaces
-  the source with `fs::rename` on Unix and other non-Windows targets. Windows
-  uses a staged replacement with a rollback attempt. Failed conversions preserve
+  the source only when the database path is a regular, non-symlink file with one
+  hard link; other paths are rejected. Replacement uses `fs::rename` on Unix
+  and other non-Windows targets. Windows uses a staged replacement with a
+  rollback attempt. Failed conversions preserve
   the logical database contents when rollback succeeds. If Windows filesystem
   errors also prevent rollback, the error identifies the possible plaintext
   backup path. Successful conversion does not retain a plaintext backup. Stale plaintext

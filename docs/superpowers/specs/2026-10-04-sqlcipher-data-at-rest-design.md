@@ -159,15 +159,17 @@ the source database must initially be opened without a key. It:
 
 - resolves the database path using normal configuration rules;
 - requires a non-empty `ILEARNED_DB_KEY`;
-- requires an existing regular database file and never creates an empty source
-  as a side effect;
+- requires an existing regular, non-symlink database file with exactly one hard
+  link; rejects link aliases and never creates an empty source as a side effect;
 - uses the standard confirmation behavior for destructive/replacement actions;
 - reports only the result/path, never the key.
 
 ### Conversion flow
 
-1. Inspect the source header and require the standard SQLite plaintext header.
-   Already-encrypted, corrupt, or unsupported files are refused without
+1. Inspect the source path without following a final-component symlink and
+   require exactly one hard link. Then inspect the header and require the
+   standard SQLite plaintext header. Symlinked, multiply hard-linked,
+   already-encrypted, corrupt, or unsupported files are refused without
    modification.
 2. Open the source in plaintext mode and validate the existing ilearned schema.
    Checkpoint/truncate any plaintext WAL state so data and sidecars are in a
@@ -226,6 +228,8 @@ plaintext files only.
   removes stale sidecars. Pre-checkpoint refusal leaves the source unchanged;
   later failure preserves its logical contents and usability when rollback
   succeeds, and rollback failure reports the possible plaintext backup path.
+- Symbolic-link paths and multiply hard-linked source files are rejected before
+  conversion so replacement cannot leave another plaintext path to the data.
 - Already-encrypted and unsupported source files are refused without mutation.
 
 ### CLI/config tests

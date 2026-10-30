@@ -346,6 +346,48 @@ fn encrypt_database_refuses_non_plaintext_sources() {
     assert_eq!(std::fs::read(&invalid_path).unwrap(), invalid_before);
 }
 
+#[cfg(unix)]
+#[test]
+fn encrypt_database_refuses_symlinked_source_without_mutating_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("plaintext.db");
+    let alias = dir.path().join("database-link.db");
+    let repo = SqliteRepo::open(&source).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    drop(repo);
+    let before = std::fs::read(&source).unwrap();
+    std::os::unix::fs::symlink(&source, &alias).unwrap();
+
+    let error = encrypt_database(&alias, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("symbolic link"));
+    assert!(std::fs::symlink_metadata(&alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+}
+
+#[test]
+fn encrypt_database_refuses_multi_linked_source_without_mutating_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("plaintext.db");
+    let alias = dir.path().join("database-hard-link.db");
+    let repo = SqliteRepo::open(&source).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    drop(repo);
+    let before = std::fs::read(&source).unwrap();
+    std::fs::hard_link(&source, &alias).unwrap();
+
+    let error = encrypt_database(&source, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("multiple hard links"));
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    assert_eq!(std::fs::read(&alias).unwrap(), before);
+}
+
 #[test]
 fn encrypt_database_requires_existing_nonempty_key() {
     let dir = tempfile::tempdir().unwrap();

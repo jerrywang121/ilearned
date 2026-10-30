@@ -17,6 +17,8 @@
 - Keyed initialization issues SQLCipher's key pragma before any schema access and enables `PRAGMA cipher_memory_security = ON`.
 - Use `rusqlite`'s `bundled-sqlcipher-vendored-openssl` feature; do not require system SQLCipher/OpenSSL headers.
 - Plaintext-to-encrypted conversion is explicit, confirmation-gated, and uses `sqlcipher_export`; startup never auto-converts.
+- Conversion accepts only a regular source file with one hard link; a symlink
+  at the database path or a multiply hard-linked file is rejected before conversion.
 - Key material must not appear in logs, errors, JSON output, `config show`, or process arguments.
 - Preserve the `application::MemoryService` boundary; adapters contain no SQL, lifecycle transitions, or ranking logic.
 - Preserve existing path resolution, WAL, FTS, embedding, lifecycle, and public record behavior.
@@ -135,13 +137,16 @@
 
 **Interfaces:**
 - Produces `pub fn encrypt_database(path: &Path, key: &str) -> Result<(), AppError>` in `src/storage/encryption.rs`.
-- The function requires a non-empty key and an existing regular plaintext SQLite file; it does not create a source database.
+- The function requires a non-empty key and an existing regular plaintext SQLite
+  file with one hard link; it rejects symlink paths and multiply hard-linked
+  files, and does not create a source database.
 - The function uses a same-directory temporary destination, SQLCipher `ATTACH DATABASE ... KEY ...` plus `SELECT sqlcipher_export('encrypted')`, keyed verification, and cleanup/rollback before replacing the source.
 
 - [x] **Step 1: Write failing migration tests.**
   Add storage integration tests:
   - `encrypt_database_preserves_records_fts_and_embeddings`: create a plaintext repo, insert an experience, create/populate the existing embeddings table, force/close WAL state, call `encrypt_database`, assert the main header is no longer plaintext, reopen with the key, verify the record and FTS query, verify embedding rows remain, and assert no plaintext `-wal`/`-shm` sidecars remain;
   - `encrypt_database_refuses_non_plaintext_sources`: call it on an already encrypted database and on a file containing non-SQLite bytes, assert an error and byte-for-byte unchanged source;
+  - symlink and hard-link source tests assert both link forms are refused before the source is modified;
   - `encrypt_database_requires_existing_nonempty_key`: call it with an empty key and a missing path, assert an error and that no destination file is created;
   - `encrypt_database_failure_cleans_temporary_output`: exercise a failed source/schema/export validation and assert the original bytes remain unchanged and no generated temporary path remains.
 
@@ -154,6 +159,7 @@
 - [x] **Step 3: Add the storage encryption module.**
   Export `pub mod encryption` from `src/storage/mod.rs`. Implement `encrypt_database` with:
   - a `SQLite format 3\0` header check before opening;
+  - no-follow source metadata validation and hard-link-count validation before reading or replacing the database;
   - source opening without a key and existing ilearned schema validation;
   - WAL checkpoint/truncate and connection closure before replacement;
   - a UUID-named temporary file in the source directory;

@@ -65,8 +65,9 @@
 
 `ilearned db encrypt [--yes] [--json]` is an explicit, confirmation-gated
 conversion of the resolved existing regular plaintext database. It requires a
-non-empty `ILEARNED_DB_KEY`; it never creates a missing source and refuses
-already-encrypted, corrupt, or unsupported files without rewriting them.
+non-empty `ILEARNED_DB_KEY`; it never creates a missing source and refuses a
+database path that is itself a symbolic link, files with multiple hard links,
+and already-encrypted, corrupt, or unsupported files without rewriting them.
 
 The migration acquires an exclusive per-database advisory lock, checkpoints and
 truncates plaintext WAL state, creates a temporary

@@ -174,7 +174,9 @@ ilearned mcp
   source leaves the source unchanged; later errors preserve logical contents if
   rollback succeeds. If Windows filesystem errors also prevent rollback, the
   error identifies the possible plaintext backup path. JSON success is `{"encrypted":{"path":"..."}}`; human
-  output reports only the encrypted path. Conversion uses `sqlcipher_export`,
+  output reports only the encrypted path. The source must be a regular file,
+  not a symbolic link, and have a single hard link. Conversion uses
+  `sqlcipher_export`,
   verifies integrity and schema, removes stale plaintext `-wal`/`-shm` sidecars,
   then replaces the source with `fs::rename` on Unix and other non-Windows
   targets or with a staged replacement and rollback attempt on Windows. It does
