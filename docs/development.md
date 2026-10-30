@@ -37,8 +37,9 @@ with plain JSON-RPC lines).
   out of command arguments, test output, logs, fixtures, and generated TOML;
   use per-process environment injection in tests. No-key tests must continue
   to exercise plaintext compatibility, while migration tests cover
-  `sqlcipher_export`, integrity verification, Unix atomic replacement versus
-  Windows/other rollback-safe staged replacement, and stale `-wal`/`-shm`
-  cleanup.
+  `sqlcipher_export`, integrity verification, Unix `fs::rename`, Windows staged
+  replacement, injected rollback failures, and stale `-wal`/`-shm` cleanup.
+- Release archives and installers include `THIRD-PARTY-NOTICES.md`; keep its
+  SQLCipher and OpenSSL notices aligned with the bundled versions in `Cargo.lock`.
 - Askama templates are inline in `src/surfaces/http/web.rs`; there is no
   `templates/` directory to keep in sync.

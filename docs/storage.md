@@ -74,14 +74,19 @@ destination in the same directory, attaches it with the key, and runs
 `sqlcipher_export('encrypted')`. This copies the complete schema and contents,
 including FTS tables/triggers and lazily-created embedding rows. It then opens
 the destination with the key, runs SQLCipher integrity and ilearned schema
-checks, and only after verification replaces the source atomically on Unix or
-through a rollback-safe staged replacement on Windows and other platforms.
-Temporary output is cleaned on all failure paths; stale plaintext `-wal`/`-shm`
-sidecars are removed before replacement and no plaintext backup is retained.
+checks, and only after verification replaces the source with `fs::rename` on
+Unix and other non-Windows targets. Windows uses a staged replacement with a
+rollback attempt.
+Ordinary failure paths clean temporary output and preserve the source. If
+Windows filesystem errors also prevent rollback, the error reports the possible
+plaintext backup path for manual recovery. Successful conversion retains no
+plaintext backup. Stale plaintext `-wal`/`-shm` sidecars are removed before
+replacement.
 
 Confirmation refusal, missing/invalid key, or another pre-checkpoint refusal
 leaves the original database unchanged. A later migration failure preserves the
-logical database contents and usability, though checkpointing can change WAL
-bytes. The successful result reports only the path; the key is never included.
+logical database contents and usability when rollback succeeds, though
+checkpointing can change WAL bytes. The successful result reports only the path;
+the key is never included.
 JSONL `export` remains a plaintext portable backup and is not encrypted by this
 feature.

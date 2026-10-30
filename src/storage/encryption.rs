@@ -272,7 +272,10 @@ where
                 "unable to replace plaintext database; source restored".to_string(),
             )),
             Err(_) => Err(AppError::Storage(
-                "unable to replace plaintext database and restore the source".to_string(),
+                format!(
+                    "unable to replace plaintext database and restore the source; plaintext backup may remain at {}",
+                    backup.display()
+                ),
             )),
         };
     }
@@ -291,12 +294,16 @@ where
                 .to_string(),
         )),
         Err(_) if encrypted_removal_failed => Err(AppError::Storage(
-            "unable to remove plaintext backup and encrypted replacement, and restore the source"
-                .to_string(),
+            format!(
+                "unable to remove plaintext backup and encrypted replacement, and restore the source; plaintext backup may remain at {}",
+                backup.display()
+            ),
         )),
         Err(_) => Err(AppError::Storage(
-            "unable to remove plaintext backup and restore the source after removing the encrypted replacement"
-                .to_string(),
+            format!(
+                "unable to remove plaintext backup and restore the source after removing the encrypted replacement; plaintext backup may remain at {}",
+                backup.display()
+            ),
         )),
     }
 }
@@ -391,6 +398,7 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("restore"));
+        assert!(error.to_string().contains("backup.db"));
     }
 
     #[test]

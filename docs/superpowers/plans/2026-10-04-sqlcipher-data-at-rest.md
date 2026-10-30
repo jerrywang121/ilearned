@@ -20,7 +20,7 @@
 - Key material must not appear in logs, errors, JSON output, `config show`, or process arguments.
 - Preserve the `application::MemoryService` boundary; adapters contain no SQL, lifecycle transitions, or ranking logic.
 - Preserve existing path resolution, WAL, FTS, embedding, lifecycle, and public record behavior.
-- A failed migration must leave the original database usable and remove any temporary output.
+- Ordinary migration failures must preserve the source and remove temporary output. If Windows filesystem errors also prevent rollback, report the possible plaintext backup path for manual recovery.
 - Update behavior documentation and run `cargo fmt --check`, `cargo check`, `cargo test`, and `cargo clippy --all-targets --all-features -- -D warnings` before completion.
 
 ## Review Focus
@@ -46,7 +46,7 @@
 - Produces private `resolve_database_key() -> Result<Option<String>, AppError>` in `src/config.rs` that reads only `ILEARNED_DB_KEY`, rejects `Some("")`, and reuses `env_string` for non-UTF-8 handling.
 - Leaves the existing `Config::load` and `Config::load_with_files` call signatures unchanged so current callers and tests do not need a new argument.
 
-- [ ] **Step 1: Write failing configuration tests.**
+- [x] **Step 1: Write failing configuration tests.**
   Extend the environment cleanup list in `tests/config_file_test.rs` with `ILEARNED_DB_KEY`. Add tests that load a configured database with no key (`db_key == None`), with `ILEARNED_DB_KEY=correct horse` (`db_key == Some(...)`), and with an empty key (an `InvalidInput` error whose message names `ILEARNED_DB_KEY`). Follow the existing `EnvGuard`/serialized-environment pattern so tests do not leak process state.
 
 - [ ] **Step 2: Run the focused tests and verify they fail.**
@@ -55,19 +55,19 @@
 
   Expected: FAIL because `Config` has no `db_key` field/resolution yet.
 
-- [ ] **Step 3: Switch Cargo to bundled SQLCipher.**
+- [x] **Step 3: Switch Cargo to bundled SQLCipher.**
   In `Cargo.toml`, replace `rusqlite`'s `features = ["bundled"]` with `features = ["bundled-sqlcipher-vendored-openssl"]`. Run Cargo resolution so `Cargo.lock` records the SQLCipher/OpenSSL build dependencies; do not add a runtime key-management crate.
 
-- [ ] **Step 4: Implement environment-only key resolution.**
+- [x] **Step 4: Implement environment-only key resolution.**
   Add `db_key: Option<String>` to `Config`. In `Config::load_with_files`, call the private resolver after database-path resolution and include the result in `Self`; keep key resolution independent from TOML/file precedence. Do not add a field to `FileConfig`, `ResolvedConfig`, generated TOML, or `config show` serialization.
 
-- [ ] **Step 5: Run the focused tests and verify they pass.**
+- [x] **Step 5: Run the focused tests and verify they pass.**
 
   Run: `cargo test --test config_file_test database_key`
 
   Expected: PASS, with no key value printed by any test output.
 
-- [ ] **Step 6: Commit the dependency/configuration slice.**
+- [x] **Step 6: Commit the dependency/configuration slice.**
 
   ```bash
   git add Cargo.toml Cargo.lock src/config.rs tests/config_file_test.rs
@@ -91,7 +91,7 @@
 - `build_service(&Config)` calls `SqliteRepo::open_with_key(&cfg.db_path, cfg.db_key.as_deref())`.
 - Adds `AppError::DatabaseKey(String)` with a message that never includes the key. CLI exit mapping treats it like storage/internal failure (exit 4); HTTP/web/MCP map it to their existing internal/startup failure behavior.
 
-- [ ] **Step 1: Write failing storage tests.**
+- [x] **Step 1: Write failing storage tests.**
   Add tests in `tests/storage_test.rs` using `SqliteRepo::open_with_key`:
   - `keyed_database_reopens_with_same_key_and_has_no_sqlite_header`: create/write with `Some("test-key")`, assert the first 16 bytes are not `SQLite format 3\0`, reopen with the same key, and read the record;
   - `wrong_key_is_a_database_key_error`: reopen with `Some("wrong-key")`, assert `AppError::DatabaseKey` and that the error does not contain either key;
@@ -104,22 +104,22 @@
 
   Expected: FAIL to compile because the key-aware API and SQLCipher initialization do not exist.
 
-- [ ] **Step 3: Add typed key-error handling.**
+- [x] **Step 3: Add typed key-error handling.**
   Add `AppError::DatabaseKey(String)` and update every exhaustive error mapper (`cli/render.rs`, REST, web, and MCP). Keep `From<rusqlite::Error>` mapped to ordinary `Storage`; only the key-aware opener should classify schema/access failures occurring after applying a key as `DatabaseKey`.
 
-- [ ] **Step 4: Implement keyed `open_db`.**
+- [x] **Step 4: Implement keyed `open_db`.**
   Open the connection, apply `PRAGMA key` through rusqlite's parameter-safe pragma API immediately when `key` is `Some`, then apply `PRAGMA cipher_memory_security = ON`. Only after those operations perform WAL setup, busy timeout, migrations, and the existing FTS table verification. Map keyed initialization/schema failures to `DatabaseKey("...run ilearned db encrypt...")`; do not interpolate the key into any error.
 
-- [ ] **Step 5: Thread the key through the repository and startup.**
+- [x] **Step 5: Thread the key through the repository and startup.**
   Implement `SqliteRepo::open_with_key`, retain `SqliteRepo::open` as the `None` wrapper, and change `main.rs::build_service` to pass `cfg.db_key.as_deref()`.
 
-- [ ] **Step 6: Run the focused tests and verify they pass.**
+- [x] **Step 6: Run the focused tests and verify they pass.**
 
   Run: `cargo test --test storage_test keyed_database`, then repeat with filters `wrong_key` and `plaintext_database`.
 
   Expected: PASS; existing storage tests must also remain green.
 
-- [ ] **Step 7: Commit the key-aware opener.**
+- [x] **Step 7: Commit the key-aware opener.**
 
   ```bash
   git add src/error.rs src/storage/sqlite.rs src/storage/repository.rs src/main.rs src/surfaces/cli/render.rs src/surfaces/http/rest.rs src/surfaces/http/web.rs src/surfaces/http/mcp.rs tests/storage_test.rs
@@ -138,7 +138,7 @@
 - The function requires a non-empty key and an existing regular plaintext SQLite file; it does not create a source database.
 - The function uses a same-directory temporary destination, SQLCipher `ATTACH DATABASE ... KEY ...` plus `SELECT sqlcipher_export('encrypted')`, keyed verification, and cleanup/rollback before replacing the source.
 
-- [ ] **Step 1: Write failing migration tests.**
+- [x] **Step 1: Write failing migration tests.**
   Add storage integration tests:
   - `encrypt_database_preserves_records_fts_and_embeddings`: create a plaintext repo, insert an experience, create/populate the existing embeddings table, force/close WAL state, call `encrypt_database`, assert the main header is no longer plaintext, reopen with the key, verify the record and FTS query, verify embedding rows remain, and assert no plaintext `-wal`/`-shm` sidecars remain;
   - `encrypt_database_refuses_non_plaintext_sources`: call it on an already encrypted database and on a file containing non-SQLite bytes, assert an error and byte-for-byte unchanged source;
@@ -151,7 +151,7 @@
 
   Expected: FAIL because `encrypt_database` and the encryption module do not exist.
 
-- [ ] **Step 3: Add the storage encryption module.**
+- [x] **Step 3: Add the storage encryption module.**
   Export `pub mod encryption` from `src/storage/mod.rs`. Implement `encrypt_database` with:
   - a `SQLite format 3\0` header check before opening;
   - source opening without a key and existing ilearned schema validation;
@@ -161,22 +161,23 @@
   - keyed reopen plus `PRAGMA cipher_integrity_check` and expected-schema verification;
   - temporary-file cleanup on every error path;
   - Unix source mode-bit copying and owner-only temporary defaults elsewhere;
-  - same-filesystem atomic replacement on Unix, with a Windows rollback-safe replacement path, followed by removal of stale `-wal`/`-shm` files.
-  Do not retain a plaintext backup, and never include the key in an `AppError` message.
+  - same-filesystem atomic replacement on Unix, with a Windows rollback-safe replacement path, followed by removal of stale `-wal`/`-shm` files;
+  - no plaintext backup on success, and report a possible backup path if Windows rollback fails.
+  Never include the key in an `AppError` message.
 
-- [ ] **Step 4: Run migration tests and inspect failure behavior.**
+- [x] **Step 4: Run migration tests and inspect failure behavior.**
 
   Run: `cargo test --test storage_test encrypt_database`
 
   Expected: PASS, including full schema/derived-data preservation and cleanup assertions.
 
-- [ ] **Step 5: Run the complete storage suite.**
+- [x] **Step 5: Run the complete storage suite.**
 
   Run: `cargo test --test storage_test`
 
   Expected: PASS with all pre-existing SQLite/FTS/lifecycle/embedding tests green.
 
-- [ ] **Step 6: Commit the migration slice.**
+- [x] **Step 6: Commit the migration slice.**
 
   ```bash
   git add src/storage/encryption.rs src/storage/mod.rs tests/storage_test.rs
@@ -199,7 +200,7 @@
 - `Commands::json()` returns `DatabaseEncryptArgs.output.json` for `db encrypt`; `run_cli` rejects `Commands::Db` because this maintenance command must run before keyed `MemoryService` construction.
 - Adds `render_database_encryption(path: &Path, json: bool) -> String`, returning JSON shaped as `{"encrypted":{"path":"..."}}` and concise human output without key material.
 
-- [ ] **Step 1: Write failing CLI tests.**
+- [x] **Step 1: Write failing CLI tests.**
   Add tests that:
   - parse/run `db encrypt --yes --json` against a plaintext configured database and assert the JSON path/result, encrypted header, and no key in stdout/stderr;
   - run without `--yes` and EOF, assert exit 2 and byte-for-byte unchanged source;
@@ -214,25 +215,25 @@
 
   Expected: FAIL because clap has no `db` command and main has no migration dispatch.
 
-- [ ] **Step 3: Add clap command types and output selection.**
+- [x] **Step 3: Add clap command types and output selection.**
   Add the `Db`/`Encrypt` hierarchy beside the existing `Embedding` and `Config` hierarchies, with `--yes` and flattened `JsonArgs`. Update `Commands::json()` and the exhaustive `run_cli` match while keeping protocol/JSONL command behavior unchanged.
 
-- [ ] **Step 4: Add rendering and main dispatch.**
+- [x] **Step 4: Add rendering and main dispatch.**
   Add `render_database_encryption`. In `main`, after config loading but before any `build_service` arm, handle `Commands::Db`: require `cfg.db_key.as_deref()`, call `confirm_destructive("encrypt database ...?", args.yes)`, call `storage::encrypt_database(&cfg.db_path, key)`, print the renderer result, and use existing `render_error`/`exit_code` paths. The command must not build a keyed repository before conversion.
 
-- [ ] **Step 5: Run the focused tests and verify they pass.**
+- [x] **Step 5: Run the focused tests and verify they pass.**
 
   Run: `cargo test --test cli_test db_encrypt`
 
   Expected: PASS, including confirmation, key propagation, JSON output, and wrong-key behavior.
 
-- [ ] **Step 6: Run configuration output tests.**
+- [x] **Step 6: Run configuration output tests.**
 
   Run: `cargo test --test config_file_test config_show`
 
   Expected: PASS, with `ILEARNED_DB_KEY` absent from all `config show` output and existing config behavior unchanged.
 
-- [ ] **Step 7: Commit the CLI slice.**
+- [x] **Step 7: Commit the CLI slice.**
 
   ```bash
   git add src/surfaces/cli/commands.rs src/surfaces/cli/render.rs src/surfaces/cli/mod.rs src/main.rs tests/cli_test.rs tests/config_file_test.rs
@@ -253,16 +254,16 @@
 - Documentation must describe the exact environment variable, optional/plaintext behavior, migration command, confirmation, error/exit behavior, sidecar handling, and key non-persistence rules.
 - No sample TOML or generated-config example may contain a database key.
 
-- [ ] **Step 1: Update the user-facing configuration and CLI docs.**
+- [x] **Step 1: Update the user-facing configuration and CLI docs.**
   Add `ILEARNED_DB_KEY` with default `unset (plaintext mode)` to the README/config reference, document `db encrypt --yes --json` in `README.md`/`docs/cli.md`, and state that the key is environment-only and never accepted as a flag or shown by `config show`.
 
-- [ ] **Step 2: Update storage/architecture/build docs.**
+- [x] **Step 2: Update storage/architecture/build docs.**
   Document the shared key-aware opener, bundled SQLCipher/vendored OpenSSL build, SQLCipher default settings, explicit `sqlcipher_export` conversion, integrity verification, atomic replacement, sidecar cleanup, and the fact that JSONL exports are not encrypted by this feature.
 
-- [ ] **Step 3: Update agent guidance.**
+- [x] **Step 3: Update agent guidance.**
   Add the new invariants to `AGENTS.md`: no-key plaintext compatibility, keyed startup behavior, environment-only key handling, and explicit migration/no automatic conversion. Keep existing service/storage boundaries intact.
 
-- [ ] **Step 4: Review documentation consistency.**
+- [x] **Step 4: Review documentation consistency.**
 
   Run: `git diff --check` and search the changed docs for `ILEARNED_DB_KEY` occurrences that might accidentally place a real key in an example.
 
@@ -283,19 +284,19 @@
 **Interfaces:**
 - The completed branch must retain the existing public record/service/surface interfaces and expose only the documented `ILEARNED_DB_KEY` and `db encrypt` additions.
 
-- [ ] **Step 1: Run formatting and compilation checks.**
+- [x] **Step 1: Run formatting and compilation checks.**
 
   Run: `cargo fmt --check` and `cargo check`
 
   Expected: both pass with the SQLCipher/vendored-OpenSSL dependency graph.
 
-- [ ] **Step 2: Run the complete test suite.**
+- [x] **Step 2: Run the complete test suite.**
 
   Run: `cargo test`
 
   Expected: all existing and new tests pass, including CLI, REST, web, MCP, stdio MCP, config, storage, application, and export/import suites.
 
-- [ ] **Step 3: Run strict linting.**
+- [x] **Step 3: Run strict linting.**
 
   Run: `cargo clippy --all-targets --all-features -- -D warnings`
 
@@ -309,3 +310,12 @@
   Run: `git status --short --branch`, `git log --oneline --decorate -8`, and `git diff main...HEAD --check`.
 
   Expected: clean working tree, only the SQLCipher design/implementation/docs commits, and no accidental secrets or unrelated changes.
+
+## Validation Update (2026-10-30)
+
+- Windows: `cargo fmt --check`, `cargo check --locked`, `cargo test --locked` (153 tests), and `cargo clippy --locked --all-targets --all-features -- -D warnings` passed. The full suite includes migration and rollback tests.
+- Windows rollback-failure cases use injected filesystem callbacks; successful replacement also uses the real Windows filesystem. Actual OS-level filesystem failure was not simulated.
+- macOS: pending; this workspace runs on Windows and has no macOS runner attached.
+- GitHub: no matching pull request or branch workflow run was visible. `gh` requires authentication, so PR creation and CI status remain pending.
+- Licensing: `THIRD-PARTY-NOTICES.md` now contains the bundled SQLCipher and OpenSSL licenses and SQLite public-domain attribution; cargo-dist is configured to include it. A local cargo-dist artifact build was unavailable because `dist` is not installed.
+- Red-phase test runs, the manual end-to-end smoke test, and the final clean-worktree review remain unchecked because this review has no evidence for them or has not run them.

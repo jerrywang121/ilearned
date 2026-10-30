@@ -171,13 +171,15 @@ ilearned mcp
   database using `ILEARNED_DB_KEY`. It requires the normal destructive-action
   confirmation (`--yes` or interactive `y/N`) and runs before normal keyed
   service construction. Missing key, refusal, an already-encrypted/corrupt
-  source leaves the source unchanged; a later conversion error preserves the
-  logical database contents and usability and returns a non-zero error. JSON success is `{"encrypted":{"path":"..."}}`; human
+  source leaves the source unchanged; later errors preserve logical contents if
+  rollback succeeds. If Windows filesystem errors also prevent rollback, the
+  error identifies the possible plaintext backup path. JSON success is `{"encrypted":{"path":"..."}}`; human
   output reports only the encrypted path. Conversion uses `sqlcipher_export`,
-  verifies integrity and schema, atomically replaces the source on Unix or uses
-  a rollback-safe staged replacement on Windows and other platforms, and
-  removes stale plaintext `-wal`/`-shm` sidecars before replacement. It does not retain a plaintext
-  backup; JSONL exports are not encrypted by this feature.
+  verifies integrity and schema, removes stale plaintext `-wal`/`-shm` sidecars,
+  then replaces the source with `fs::rename` on Unix and other non-Windows
+  targets or with a staged replacement and rollback attempt on Windows. It does
+  not retain a plaintext
+  backup on success; JSONL exports are not encrypted by this feature.
 - `serve` starts REST + web + MCP on one listener. `--bind` on the `serve`
   subcommand wins over every config-file and environment value. After the
   listener is ready, startup prints the Web UI URL (`/`), REST API URL

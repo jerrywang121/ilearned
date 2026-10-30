@@ -1,7 +1,7 @@
 # SQLCipher Data-at-Rest Protection
 
 - **Date:** 2026-10-04
-- **Status:** Draft for written review
+- **Status:** Implemented; Windows verified, macOS validation pending
 - **Scope:** Optional SQLCipher encryption for the local SQLite database and an explicit plaintext-to-encrypted migration command
 
 ## Context and goals
@@ -182,14 +182,18 @@ the source database must initially be opened without a key. It:
    replacement; failure leaves the plaintext source logically usable and aborts
    without reporting success.
 6. Replace the source only after verification and sidecar cleanup succeed:
-   atomically on Unix and with a rollback-safe staged replacement on Windows and
-   other platforms. On Unix, copy the source mode bits to the temporary file
-   before replacement; on other platforms retain the temporary file's owner-only
-   default permissions.
+  with `fs::rename` on Unix and other non-Windows targets, and with a staged
+  replacement plus rollback attempt on Windows. On Unix, copy the source mode
+  bits to the temporary file before replacement; on other platforms retain the
+  temporary file's owner-only default permissions. If Windows filesystem
+  errors also prevent rollback, the error reports the possible path of the
+  staged plaintext backup for manual recovery.
 
-The operation does not retain a plaintext backup by default. Users who need a
-portable backup should use the existing JSONL export before conversion; that
-export is intentionally outside the database encryption boundary.
+Successful conversion does not retain a plaintext backup. If Windows filesystem
+errors also prevent rollback, a staged plaintext backup may remain and its path
+is reported. Users who need a portable backup should use the existing JSONL
+export before conversion; that export is outside the database encryption
+boundary.
 
 ### Output and repeat behavior
 
@@ -197,7 +201,9 @@ Successful JSON output will identify the encrypted database path/result without
 including key material. Human output will use the existing concise CLI style.
 Confirmation refusal, a missing/invalid key, and other pre-checkpoint refusal
 paths leave the source unchanged. Later failures preserve logical contents and
-usability, although checkpointing may change WAL bytes.
+usability when rollback succeeds, although checkpointing may change WAL bytes.
+If Windows rollback itself fails, the error identifies the possible plaintext
+backup path and manual recovery may be required.
 
 Running the command against an already encrypted or unsupported file refuses
 the operation instead of trying to rewrite it. Normal keyed startup can then
@@ -218,7 +224,8 @@ plaintext files only.
   remain intact after conversion.
 - Conversion copies the full database, verifies the encrypted destination, and
   removes stale sidecars. Pre-checkpoint refusal leaves the source unchanged;
-  later failure preserves its logical contents and usability.
+  later failure preserves its logical contents and usability when rollback
+  succeeds, and rollback failure reports the possible plaintext backup path.
 - Already-encrypted and unsupported source files are refused without mutation.
 
 ### CLI/config tests
