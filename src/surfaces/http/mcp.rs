@@ -31,7 +31,9 @@ fn map_err(e: AppError) -> rmcp::ErrorData {
             format!("embedding unavailable (503-equivalent): {m}"),
             None,
         ),
-        AppError::Storage(m) | AppError::Internal(m) => rmcp::ErrorData::internal_error(m, None),
+        AppError::Storage(m) | AppError::DatabaseKey(m) | AppError::Internal(m) => {
+            rmcp::ErrorData::internal_error(m, None)
+        }
     }
 }
 

@@ -37,7 +37,7 @@ impl IntoResponse for ApiError {
                 format!("experience not found: ({topic}, {id})"),
             ),
             AppError::EmbeddingUnavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m.clone()),
-            AppError::Storage(m) | AppError::Internal(m) => {
+            AppError::Storage(m) | AppError::DatabaseKey(m) | AppError::Internal(m) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, m.clone())
             }
         };

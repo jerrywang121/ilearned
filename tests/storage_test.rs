@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use ilearned::domain::{Experience, State};
 use ilearned::storage::embeddings::VectorStore;
 use ilearned::storage::repository::ExperienceRepo;
-use ilearned::storage::SqliteRepo;
+use ilearned::storage::{encrypt_database, SqliteRepo};
 
 fn exp(topic: &str, id: &str, updated_days_ago: i64, state: State) -> Experience {
     Experience {
@@ -36,6 +36,49 @@ fn crud_roundtrip_unix_epoch() {
     assert_eq!(got.topic, "rust");
     assert_eq!(got.state, State::Active);
     assert!(repo.get("rust", "nope").unwrap().is_none());
+}
+
+#[test]
+fn keyed_database_reopens_with_same_key_and_has_no_sqlite_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keyed.db");
+    let repo = SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+    repo.insert(&exp("rust", "a1", 0, State::Active)).unwrap();
+
+    let header = std::fs::read(&path).unwrap();
+    assert_ne!(&header[..16], b"SQLite format 3\0");
+
+    let reopened = SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+    assert!(reopened.get("rust", "a1").unwrap().is_some());
+}
+
+#[test]
+fn wrong_key_is_a_database_key_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("keyed.db");
+    SqliteRepo::open_with_key(&path, Some("test-key")).unwrap();
+
+    let error = match SqliteRepo::open_with_key(&path, Some("wrong-key")) {
+        Err(error) => error,
+        Ok(_) => panic!("opening with a wrong key must fail"),
+    };
+    assert!(matches!(error, ilearned::AppError::DatabaseKey(_)));
+    assert!(!error.to_string().contains("test-key"));
+    assert!(!error.to_string().contains("wrong-key"));
+}
+
+#[test]
+fn plaintext_database_rejects_keyed_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plaintext.db");
+    SqliteRepo::open(&path).unwrap();
+
+    let error = match SqliteRepo::open_with_key(&path, Some("test-key")) {
+        Err(error) => error,
+        Ok(_) => panic!("opening plaintext with a key must fail"),
+    };
+    assert!(matches!(error, ilearned::AppError::DatabaseKey(_)));
+    assert!(error.to_string().contains("run ilearned db encrypt"));
 }
 
 #[test]
@@ -249,4 +292,151 @@ fn embedding_candidates_include_non_deleted_states() {
         candidates.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
         vec!["active", "forgotten", "inactive"]
     );
+}
+
+#[test]
+fn encrypt_database_preserves_records_fts_and_embeddings() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plaintext.db");
+    let repo = SqliteRepo::open(&path).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    repo.upsert_vector("migration", "record1", "test-model", &[1.0, 0.0])
+        .unwrap();
+    repo.conn()
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+        .unwrap();
+    drop(repo);
+
+    encrypt_database(&path, "encryption-key").unwrap();
+
+    let encrypted_bytes = std::fs::read(&path).unwrap();
+    assert_ne!(&encrypted_bytes[..16], b"SQLite format 3\0");
+    assert!(!path.with_extension("db-wal").exists());
+    assert!(!path.with_extension("db-shm").exists());
+
+    let reopened = SqliteRepo::open_with_key(&path, Some("encryption-key")).unwrap();
+    assert!(reopened.get("migration", "record1").unwrap().is_some());
+    assert_eq!(reopened.search_fts("alpha", None, false).unwrap().len(), 1);
+    assert_eq!(
+        reopened.load_vectors(None, "test-model", 2).unwrap().len(),
+        1
+    );
+}
+
+#[test]
+fn encrypt_database_refuses_non_plaintext_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    let encrypted_path = dir.path().join("encrypted.db");
+    let encrypted_repo = SqliteRepo::open_with_key(&encrypted_path, Some("original-key")).unwrap();
+    encrypted_repo
+        .insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    drop(encrypted_repo);
+    let encrypted_before = std::fs::read(&encrypted_path).unwrap();
+
+    assert!(encrypt_database(&encrypted_path, "new-key").is_err());
+    assert_eq!(std::fs::read(&encrypted_path).unwrap(), encrypted_before);
+
+    let invalid_path = dir.path().join("not-sqlite.db");
+    std::fs::write(&invalid_path, b"not a SQLite database").unwrap();
+    let invalid_before = std::fs::read(&invalid_path).unwrap();
+
+    assert!(encrypt_database(&invalid_path, "encryption-key").is_err());
+    assert_eq!(std::fs::read(&invalid_path).unwrap(), invalid_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn encrypt_database_refuses_symlinked_source_without_mutating_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("plaintext.db");
+    let alias = dir.path().join("database-link.db");
+    let repo = SqliteRepo::open(&source).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    drop(repo);
+    let before = std::fs::read(&source).unwrap();
+    std::os::unix::fs::symlink(&source, &alias).unwrap();
+
+    let error = encrypt_database(&alias, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("symbolic link"));
+    assert!(std::fs::symlink_metadata(&alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+}
+
+#[test]
+fn encrypt_database_refuses_multi_linked_source_without_mutating_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("plaintext.db");
+    let alias = dir.path().join("database-hard-link.db");
+    let repo = SqliteRepo::open(&source).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+    drop(repo);
+    let before = std::fs::read(&source).unwrap();
+    std::fs::hard_link(&source, &alias).unwrap();
+
+    let error = encrypt_database(&source, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("multiple hard links"));
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    assert_eq!(std::fs::read(&alias).unwrap(), before);
+}
+
+#[test]
+fn encrypt_database_requires_existing_nonempty_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("plaintext.db");
+    SqliteRepo::open(&source).unwrap();
+
+    assert!(encrypt_database(&source, "").is_err());
+    assert!(source.exists());
+
+    let missing = dir.path().join("missing.db");
+    assert!(encrypt_database(&missing, "encryption-key").is_err());
+    assert!(!missing.exists());
+}
+
+#[test]
+fn encrypt_database_refuses_while_a_repository_holds_the_database_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plaintext.db");
+    let repo = SqliteRepo::open(&path).unwrap();
+    repo.insert(&exp("migration", "record1", 0, State::Active))
+        .unwrap();
+
+    let error = encrypt_database(&path, "encryption-key").unwrap_err();
+
+    assert!(error.to_string().contains("in use"));
+    assert_eq!(
+        repo.get("migration", "record1").unwrap().unwrap().id,
+        "record1"
+    );
+    assert_eq!(&std::fs::read(&path).unwrap()[..16], b"SQLite format 3\0");
+}
+
+#[test]
+fn encrypt_database_failure_cleans_temporary_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("incomplete.db");
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);")
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+
+    assert!(encrypt_database(&path, "encryption-key").is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(std::fs::read_dir(dir.path()).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".ilearned-encrypt-")
+    }));
 }

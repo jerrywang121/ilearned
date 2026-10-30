@@ -9,7 +9,7 @@ pub fn exit_code(e: &AppError) -> i32 {
         AppError::NotFound { .. } => 1,
         AppError::InvalidInput(_) | AppError::InvalidFtsSyntax(_) => 2,
         AppError::EmbeddingUnavailable(_) => 3,
-        AppError::Storage(_) | AppError::Internal(_) => 4,
+        AppError::Storage(_) | AppError::DatabaseKey(_) | AppError::Internal(_) => 4,
     }
 }
 
@@ -80,6 +80,16 @@ pub fn render_clear(summary: ClearSummary, json: bool) -> String {
             "cleared {} topic(s), {} experience(s)",
             summary.topics, summary.items
         )
+    }
+}
+
+/// Render the successful conversion of a plaintext database to SQLCipher format.
+pub fn render_database_encryption(path: &std::path::Path, json: bool) -> String {
+    let path = path.display().to_string();
+    if json {
+        serde_json::json!({"encrypted": {"path": path}}).to_string()
+    } else {
+        format!("encrypted database {path}")
     }
 }
 

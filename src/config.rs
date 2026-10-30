@@ -505,6 +505,15 @@ fn resolve_database_path(explicit: Option<PathBuf>, file: Option<&FileConfig>) -
     })
 }
 
+fn resolve_database_key() -> Result<Option<String>, AppError> {
+    match env_string("ILEARNED_DB_KEY")? {
+        Some(value) if value.is_empty() => Err(AppError::InvalidInput(
+            "ILEARNED_DB_KEY must not be empty".to_string(),
+        )),
+        key => Ok(key),
+    }
+}
+
 fn resolve_bind(
     bind: Option<SocketAddr>,
     file: Option<&FileConfig>,
@@ -570,6 +579,7 @@ fn resolve_lifecycle(
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_path: PathBuf,
+    pub db_key: Option<String>,
     pub bind: SocketAddr,
     pub lifecycle: LifecycleConfig,
     pub embedding: Option<EmbeddingConfig>,
@@ -618,10 +628,12 @@ impl Config {
                     .to_string(),
             )
         })?;
+        let db_key = resolve_database_key()?;
         let bind = resolve_bind(bind, file.as_ref())?;
         let lifecycle = resolve_lifecycle(active_days, forget_days, retention_days, file.as_ref())?;
         Ok(Self {
             db_path,
+            db_key,
             bind,
             lifecycle,
             embedding,

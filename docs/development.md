@@ -7,8 +7,10 @@ cargo build
 cargo test
 ```
 
-Requires a C toolchain (rusqlite `bundled` builds SQLite from source) and
-no OpenSSL headers (reqwest uses rustls).
+Requires a C toolchain. rusqlite's `bundled-sqlcipher-vendored-openssl` feature
+builds SQLCipher and OpenSSL from source, so normal builds do not require
+system SQLCipher or OpenSSL headers. This increases native dependency build
+time and artifact size; reqwest continues to use rustls.
 
 ## Verification (authoritative)
 
@@ -28,7 +30,16 @@ with plain JSON-RPC lines).
 
 ## Notes
 
-- HTTPS stack is rustls (`reqwest` with `default-features = false`), so no
-  system OpenSSL dev headers are needed.
+- HTTPS stack is rustls (`reqwest` with `default-features = false`). The
+  vendored OpenSSL used by bundled SQLCipher is a build dependency, not the
+  HTTPS runtime stack.
+- Database encryption uses the shared key-aware opener. Keep `ILEARNED_DB_KEY`
+  out of command arguments, test output, logs, fixtures, and generated TOML;
+  use per-process environment injection in tests. No-key tests must continue
+  to exercise plaintext compatibility, while migration tests cover
+  `sqlcipher_export`, integrity verification, Unix `fs::rename`, Windows staged
+  replacement, injected rollback failures, and stale `-wal`/`-shm` cleanup.
+- Release archives and installers include `THIRD-PARTY-NOTICES.md`; keep its
+  SQLCipher and OpenSSL notices aligned with the bundled versions in `Cargo.lock`.
 - Askama templates are inline in `src/surfaces/http/web.rs`; there is no
   `templates/` directory to keep in sync.

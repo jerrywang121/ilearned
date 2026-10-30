@@ -36,7 +36,7 @@ initialization, migrations, and all surface adapters.
   search, cosine, RRF (`k=60`), and embedding migration rules live here. `add` retries only on
   primary-key/UNIQUE violations (other storage errors propagate); unknown
   DB `state` values surface as storage errors instead of defaulting.
-- `storage` — SQLite connection, migrations, repositories, FTS5 queries,
+- `storage` — shared key-aware SQLite/SQLCipher connection, migrations, repositories, FTS5 queries,
   embedding persistence, lifecycle reconciliation, purge transactions.
 - `embedding` — `EmbeddingProvider` trait + OpenAI-compatible HTTP client +
   deterministic fake (tests) and failing (error-path tests) providers.
@@ -92,6 +92,23 @@ initialization, migrations, and all surface adapters.
   canonical records, and retains old identities unless a completely
   successful run uses confirmed `--prune`. It is a CLI-only maintenance
   operation; HTTP and MCP do not expose it.
+- The shared storage opener receives the optional process-local
+  `ILEARNED_DB_KEY`. With no key it preserves plaintext SQLite compatibility;
+  with a key it applies SQLCipher's key before any schema access and enables
+  `cipher_memory_security`, then performs the existing WAL, timeout, migration,
+  and schema setup. The key is never stored in TOML or configuration output.
+- Plaintext-to-encrypted conversion is explicit (`ilearned db encrypt`), runs
+  before keyed service construction, and uses `sqlcipher_export` followed by
+  SQLCipher integrity and schema verification. A verified destination replaces
+  the source only when the database path is a regular, non-symlink file with one
+  hard link; other paths are rejected. Replacement uses `fs::rename` on Unix
+  and other non-Windows targets. Windows uses a staged replacement with a
+  rollback attempt. Failed conversions preserve
+  the logical database contents when rollback succeeds. If Windows filesystem
+  errors also prevent rollback, the error identifies the possible plaintext
+  backup path. Successful conversion does not retain a plaintext backup. Stale plaintext
+  `-wal`/`-shm` sidecars are removed before replacement. JSONL exports are
+  outside this database-encryption boundary.
 
 Full design: `docs/superpowers/specs/2026-09-27-initial-architecture-design.md`.
 Implementation plan: `docs/superpowers/plans/2026-09-27-initial-architecture.md`.

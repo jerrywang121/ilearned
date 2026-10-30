@@ -1,12 +1,28 @@
 # Storage
 
+- The bundled rusqlite build includes SQLCipher and vendored OpenSSL. The
+  shared opener accepts the optional `ILEARNED_DB_KEY`: when unset, databases
+  remain plaintext SQLite for compatibility; when set, it applies the key
+  before any schema access and enables `PRAGMA cipher_memory_security = ON`.
+  SQLCipher's default version-4 settings are used. The key is environment-only
+  and is never persisted, logged, returned, or accepted as a CLI argument.
+- Commands that resolve or use a present-but-empty or non-UTF-8
+  `ILEARNED_DB_KEY` reject it as invalid input (CLI exit 2); `config show`
+  intentionally bypasses database-key resolution. A wrong key, or a key used
+  against an existing plaintext database, is a database-key startup error (CLI
+  exit 4) and does not trigger automatic conversion. The error points users to
+  `ilearned db encrypt` without exposing key material.
 - SQLite at a configured path, or (when no path is configured) an existing
   `./.ilearned/ilearned.db` followed by an existing XDG data database
   (`$XDG_DATA_HOME/ilearned/ilearned.db`, or
   `~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
   exists. Explicitly configured paths may be created by `open_db`, which also
-  enables WAL, sets `busy_timeout=5000`, and records
-  `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
+   enables WAL, sets `busy_timeout=5000`, and records
+   `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
+- Each `SqliteRepo` holds a shared advisory lock on a stable sibling lock file
+  for its connection lifetime. `db encrypt` acquires that lock exclusively
+  before opening/checkpointing the source and holds it through export,
+  verification, sidecar cleanup, replacement, and temporary-output cleanup.
 - `experiences` columns: `topic, id, when_text, if_text, do_text,
   check_text, updated_at (INTEGER epoch seconds), good_count, bad_count,
   state ('active'|'inactive'|'deleted'|'forgotten'), retention_started_at
@@ -44,3 +60,34 @@
   a very old `active` row goes straight to `forgotten`); then
   `purge_expired` physically removes `deleted`/`forgotten` rows whose
   retention start is strictly `>60d` old.
+
+## Plaintext-to-encrypted migration
+
+`ilearned db encrypt [--yes] [--json]` is an explicit, confirmation-gated
+conversion of the resolved existing regular plaintext database. It requires a
+non-empty `ILEARNED_DB_KEY`; it never creates a missing source and refuses a
+database path that is itself a symbolic link, files with multiple hard links,
+and already-encrypted, corrupt, or unsupported files without rewriting them.
+
+The migration acquires an exclusive per-database advisory lock, checkpoints and
+truncates plaintext WAL state, creates a temporary
+destination in the same directory, attaches it with the key, and runs
+`sqlcipher_export('encrypted')`. This copies the complete schema and contents,
+including FTS tables/triggers and lazily-created embedding rows. It then opens
+the destination with the key, runs SQLCipher integrity and ilearned schema
+checks, and only after verification replaces the source with `fs::rename` on
+Unix and other non-Windows targets. Windows uses a staged replacement with a
+rollback attempt.
+Ordinary failure paths clean temporary output and preserve the source. If
+Windows filesystem errors also prevent rollback, the error reports the possible
+plaintext backup path for manual recovery. Successful conversion retains no
+plaintext backup. Stale plaintext `-wal`/`-shm` sidecars are removed before
+replacement.
+
+Confirmation refusal, missing/invalid key, or another pre-checkpoint refusal
+leaves the original database unchanged. A later migration failure preserves the
+logical database contents and usability when rollback succeeds, though
+checkpointing can change WAL bytes. The successful result reports only the path;
+the key is never included.
+JSONL `export` remains a plaintext portable backup and is not encrypted by this
+feature.

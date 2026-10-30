@@ -663,3 +663,225 @@ fn embedding_migrate_refuses_prune_without_confirmation() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("not confirmed"));
 }
+
+#[test]
+fn db_encrypt_converts_plaintext_database_and_hides_key() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let db = dir.path().join("t.db");
+    let key = "test database key";
+
+    let add = Command::new(bin())
+        .env_remove("ILEARNED_DB_KEY")
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--topic",
+            "encrypted",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert_eq!(&std::fs::read(&db).unwrap()[..16], b"SQLite format 3\0");
+
+    let output = Command::new(bin())
+        .env("ILEARNED_DB_KEY", key)
+        .args(["--config-file", &config, "db", "encrypt", "--yes", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+        serde_json::json!({"encrypted": {"path": db.to_string_lossy()}})
+    );
+    assert_ne!(&std::fs::read(&db).unwrap()[..16], b"SQLite format 3\0");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(key));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(key));
+
+    let search = Command::new(bin())
+        .env("ILEARNED_DB_KEY", key)
+        .args([
+            "--config-file",
+            &config,
+            "search",
+            "--json",
+            "--topic",
+            "encrypted",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        search.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&search.stdout)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn db_encrypt_refuses_unconfirmed_conversion_without_mutating_source() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let db = dir.path().join("t.db");
+    let key = "confirmation key";
+    assert!(Command::new(bin())
+        .env_remove("ILEARNED_DB_KEY")
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--topic",
+            "plain",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .status()
+        .unwrap()
+        .success());
+    let before = std::fs::read(&db).unwrap();
+
+    let mut child = Command::new(bin())
+        .env("ILEARNED_DB_KEY", key)
+        .args(["--config-file", &config, "db", "encrypt"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdin.take());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+}
+
+#[test]
+fn db_encrypt_refuses_missing_key_without_mutating_source() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let db = dir.path().join("t.db");
+    assert!(Command::new(bin())
+        .env_remove("ILEARNED_DB_KEY")
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--topic",
+            "plain",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .status()
+        .unwrap()
+        .success());
+    let before = std::fs::read(&db).unwrap();
+
+    let output = Command::new(bin())
+        .env_remove("ILEARNED_DB_KEY")
+        .args(["--config-file", &config, "db", "encrypt", "--yes"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+}
+
+#[test]
+fn db_encrypt_keyed_new_database_supports_crud_and_wrong_key_fails_without_leaking_it() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let key = "correct database key";
+    let wrong_key = "wrong database key";
+
+    let add = Command::new(bin())
+        .env("ILEARNED_DB_KEY", key)
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--topic",
+            "keyed",
+            "--when",
+            "w",
+            "--if",
+            "i",
+            "--do",
+            "d",
+            "--check",
+            "c",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let search = Command::new(bin())
+        .env("ILEARNED_DB_KEY", key)
+        .args([
+            "--config-file",
+            &config,
+            "search",
+            "--json",
+            "--topic",
+            "keyed",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        search.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&search.stdout)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let wrong = Command::new(bin())
+        .env("ILEARNED_DB_KEY", wrong_key)
+        .args(["--config-file", &config, "search", "--topic", "keyed"])
+        .output()
+        .unwrap();
+    assert_eq!(wrong.status.code(), Some(4));
+    assert!(!String::from_utf8_lossy(&wrong.stderr).contains(wrong_key));
+}

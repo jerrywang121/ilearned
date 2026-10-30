@@ -5,8 +5,9 @@ use std::sync::{Mutex, MutexGuard};
 use ilearned::config::{Config, EmbeddingConfig, FileConfig};
 
 static PROCESS_ENV_LOCK: Mutex<()> = Mutex::new(());
-const CONFIG_ENV_VARS: [&str; 13] = [
+const CONFIG_ENV_VARS: [&str; 14] = [
     "ILEARNED_DB",
+    "ILEARNED_DB_KEY",
     "ILEARNED_BIND",
     "ILEARNED_ACTIVE_DAYS",
     "ILEARNED_FORGET_DAYS",
@@ -664,8 +665,15 @@ fn config_show_reports_resolved_values_and_existing_sources_without_a_database()
     assert_eq!(value["config"]["active_days"], 11);
     assert_eq!(value["config"]["forget_days"], 22);
     let files = value["config_files"].as_array().unwrap();
+    let global = std::fs::canonicalize(global).unwrap();
+    let explicit = std::fs::canonicalize(explicit).unwrap();
     assert!(
-        files.iter().any(|path| path.as_str() == global.to_str()),
+        files.iter().any(|path| {
+            path.as_str()
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .as_ref()
+                == Some(&global)
+        }),
         "global config path missing from {files:?}"
     );
     assert!(
@@ -675,7 +683,12 @@ fn config_show_reports_resolved_values_and_existing_sources_without_a_database()
         "local config path missing from {files:?}"
     );
     assert!(
-        files.iter().any(|path| path.as_str() == explicit.to_str()),
+        files.iter().any(|path| {
+            path.as_str()
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .as_ref()
+                == Some(&explicit)
+        }),
         "explicit config path missing from {files:?}"
     );
 }
@@ -784,9 +797,10 @@ fn config_init_global_uses_xdg_config_path() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    let reported = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        global.to_string_lossy()
+        std::fs::canonicalize(reported).unwrap(),
+        std::fs::canonicalize(&global).unwrap()
     );
     assert!(
         global.is_file(),
@@ -1211,4 +1225,91 @@ fn empty_database_file_value_is_not_configured() {
         matches!(res, Err(ilearned::AppError::InvalidInput(ref msg)) if msg.contains("not configured")),
         "expected an unconfigured-db error, got {res:?}"
     );
+}
+
+#[test]
+fn database_key_is_none_when_not_configured() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::remove_var("ILEARNED_DB_KEY");
+    }
+    let config = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(config.db_key, None);
+}
+
+#[test]
+fn database_key_comes_from_environment() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", "correct horse");
+    }
+    let config = Config::load_with_files(None, None, None, None, None, None, Some(file)).unwrap();
+    assert_eq!(config.db_key.as_deref(), Some("correct horse"));
+}
+
+#[test]
+fn empty_database_key_is_rejected() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", "");
+    }
+    let result = Config::load_with_files(None, None, None, None, None, None, Some(file));
+    assert!(
+        matches!(result, Err(ilearned::AppError::InvalidInput(message)) if message.contains("ILEARNED_DB_KEY"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_database_key_is_rejected() {
+    use std::os::unix::ffi::OsStringExt;
+    let dir = tempfile::TempDir::new().unwrap();
+    let file: FileConfig =
+        toml::from_str(&format!("db = {:?}", dir.path().join("db.sqlite"))).unwrap();
+    let _lock = PROCESS_ENV_LOCK.lock().unwrap();
+    let _env = EnvGuard::capture();
+    unsafe {
+        std::env::set_var("ILEARNED_DB_KEY", std::ffi::OsString::from_vec(vec![0xff]));
+    }
+    let result = Config::load_with_files(None, None, None, None, None, None, Some(file));
+    assert!(
+        matches!(result, Err(ilearned::AppError::InvalidInput(message)) if message.contains("ILEARNED_DB_KEY"))
+    );
+}
+
+#[test]
+fn config_show_does_not_print_database_key_from_environment() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!("db = {:?}\n", dir.path().join("db.sqlite")),
+    )
+    .unwrap();
+    let key = "database-secret-must-not-appear";
+
+    let output = isolated_command(dir.path())
+        .env("ILEARNED_DB_KEY", key)
+        .args(["--config-file", config.to_str().unwrap(), "config", "show"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(key));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(key));
 }
