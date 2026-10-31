@@ -341,7 +341,7 @@ async fn index_renders_topic_sorted_table_with_operations() {
         .await
         .unwrap();
 
-    for column in ["Topic", "When", "If", "Do", "Check", "Ops"] {
+    for column in ["Topic", "When", "If", "Do", "Check"] {
         assert!(
             index.contains(&format!("<th>{}</th>", column)),
             "missing {} column",
@@ -355,6 +355,11 @@ async fn index_renders_topic_sorted_table_with_operations() {
     assert!(index.contains(r#"<div class="table-wrap"><table>"#));
     assert!(index.contains(".table-wrap{overflow-x:auto}"));
     assert!(index.contains("min-width:50em"));
+    assert!(
+        index.contains(".ops{width:8.33%"),
+        "Ops should use half of its original fixed-layout width"
+    );
+    assert!(index.contains(r#"<th class="ops">Ops</th>"#));
 
     let alpha = index.find("alpha").expect("alpha topic is listed");
     let beta = index.find("beta").expect("beta topic is listed");
@@ -382,12 +387,16 @@ async fn index_renders_topic_sorted_table_with_operations() {
         assert!(index.contains(&format!(r#"aria-label="{} alpha/{}""#, label, alpha_id)));
     }
     assert!(index.contains(&format!(r#"href="/experiences/alpha/{}/edit""#, alpha_id)));
-    for operation in ["promote", "demote", "delete"] {
+    for operation in ["promote", "demote"] {
         assert!(index.contains(&format!(
-            r#"action="/experiences/alpha/{}/{}""#,
+            r#"action="/experiences/alpha/{}/{}?q=&amp;topic=&amp;deep=false""#,
             alpha_id, operation
         )));
     }
+    assert!(index.contains(&format!(
+        r#"action="/experiences/alpha/{}/delete""#,
+        alpha_id
+    )));
 
     let alpha_row_start = index
         .find(&format!(r#"href="/experiences/alpha/{}""#, alpha_id))
@@ -407,6 +416,12 @@ async fn index_renders_topic_sorted_table_with_operations() {
         .map(|line| line.split("</div>").next().unwrap())
         .collect();
     assert_eq!(ops_lines.len(), 3, "operations should occupy three lines");
+    let delete_position = ops_lines[0].find('✘').expect("delete icon is present");
+    let edit_position = ops_lines[0].find('✎').expect("edit icon is present");
+    assert!(
+        delete_position < edit_position,
+        "delete should precede edit"
+    );
     assert!(ops_lines[0].contains(&format!("/experiences/alpha/{}/edit", alpha_id)));
     assert!(ops_lines[0].contains(&format!("/experiences/alpha/{}/delete", alpha_id)));
     assert!(ops_lines[1].contains(&format!("/experiences/alpha/{}/promote", alpha_id)));
@@ -559,8 +574,14 @@ async fn index_row_actions_encode_nested_topics() {
 
     for path in [
         format!(r#"href="/experiences/nested%2Fchild/{}/edit""#, id),
-        format!(r#"action="/experiences/nested%2Fchild/{}/promote""#, id),
-        format!(r#"action="/experiences/nested%2Fchild/{}/demote""#, id),
+        format!(
+            r#"action="/experiences/nested%2Fchild/{}/promote?q=&amp;topic=&amp;deep=false""#,
+            id
+        ),
+        format!(
+            r#"action="/experiences/nested%2Fchild/{}/demote?q=&amp;topic=&amp;deep=false""#,
+            id
+        ),
         format!(r#"action="/experiences/nested%2Fchild/{}/delete""#, id),
     ] {
         assert!(
@@ -569,4 +590,106 @@ async fn index_row_actions_encode_nested_topics() {
             path
         );
     }
+}
+
+#[tokio::test]
+async fn feedback_actions_return_to_filtered_list_with_updated_counts() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let created: serde_json::Value = client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({
+            "topic": "feedback",
+            "when": "needle before action",
+            "if": "trigger observed",
+            "do": "take action",
+            "check": "verify result"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+    let list_query = "q=needle&topic=feedback&deep=true";
+
+    let index = client
+        .get(srv.url(&format!("/?{}", list_query)))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    for action in ["promote", "demote"] {
+        assert!(
+            index.contains(&format!(
+                r#"action="/experiences/feedback/{}/{}?q=needle&amp;topic=feedback&amp;deep=true""#,
+                id, action
+            )),
+            "missing filtered form action; rendered index: {}",
+            index
+        );
+    }
+
+    let promoted = client
+        .post(srv.url(&format!(
+            "/experiences/feedback/{}/promote?{}",
+            id, list_query
+        )))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(promoted.status(), reqwest::StatusCode::SEE_OTHER);
+    let promoted_location = promoted.headers()[reqwest::header::LOCATION]
+        .to_str()
+        .unwrap();
+    assert_eq!(promoted_location, format!("/?{}", list_query));
+    let promoted_list = client
+        .get(srv.url(promoted_location))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(promoted_list.contains(r#"<th class="ops">Ops</th>"#));
+    assert!(promoted_list.contains("Good count: 2"));
+    assert!(promoted_list.contains("Bad count: 0"));
+
+    let demoted = client
+        .post(srv.url(&format!(
+            "/experiences/feedback/{}/demote?{}",
+            id, list_query
+        )))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(demoted.status(), reqwest::StatusCode::SEE_OTHER);
+    let demoted_location = demoted.headers()[reqwest::header::LOCATION]
+        .to_str()
+        .unwrap();
+    assert_eq!(demoted_location, format!("/?{}", list_query));
+    let demoted_list = client
+        .get(srv.url(demoted_location))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(demoted_list.contains("Good count: 2"));
+    assert!(demoted_list.contains("Bad count: 1"));
 }

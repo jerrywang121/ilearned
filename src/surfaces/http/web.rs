@@ -71,7 +71,7 @@ struct BaseTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:8.33%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
 </head><body>
 <h1>ilearned</h1>
 <form id="search" method="get" action="/">
@@ -82,7 +82,7 @@ struct BaseTemplate {
 </form>
 <p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a></p>
 <div class="table-wrap"><table>
-<thead><tr><th>Topic</th><th>When</th><th>If</th><th>Do</th><th>Check</th><th>Ops</th></tr></thead>
+<thead><tr><th>Topic</th><th>When</th><th>If</th><th>Do</th><th>Check</th><th class="ops">Ops</th></tr></thead>
 <tbody>
 {% for e in results %}
 <tr>
@@ -92,9 +92,9 @@ struct BaseTemplate {
 <td class="experience-text">{{ e.do_text }}</td>
 <td class="experience-text">{{ e.check_text }}</td>
 <td class="ops">
-<div class="ops-line"><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form></div>
-<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form><span class="op-count" aria-label="Good count: {{ e.good_count }}">{{ e.good_count }}</span></div>
-<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form><span class="op-count" aria-label="Bad count: {{ e.bad_count }}">{{ e.bad_count }}</span></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form><span class="op-count" aria-label="Good count: {{ e.good_count }}">{{ e.good_count }}</span></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form><span class="op-count" aria-label="Bad count: {{ e.bad_count }}">{{ e.bad_count }}</span></div>
 </td>
 </tr>
 {% endfor %}
@@ -429,33 +429,32 @@ async fn edit_submit<R: ExperienceRepo + VectorStore>(
     Ok(Redirect::to(&experience_path(&topic, &id)))
 }
 
+fn list_redirect(uri: &axum::http::Uri) -> Redirect {
+    match uri.query().filter(|query| !query.is_empty()) {
+        Some(query) => Redirect::to(&format!("/?{}", query)),
+        None => Redirect::to("/"),
+    }
+}
+
 async fn promote_action<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
+    uri: axum::http::Uri,
 ) -> Result<Redirect, WebErr> {
-    svc.promote(&FeedbackCommand {
-        topic: topic.clone(),
-        id: id.clone(),
-    })
-    .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Redirect::to(&experience_path(&topic, &id)))
+    svc.promote(&FeedbackCommand { topic, id })
+        .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    Ok(list_redirect(&uri))
 }
 
 async fn demote_action<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,
+    uri: axum::http::Uri,
 ) -> Result<Redirect, WebErr> {
-    let e = svc
-        .demote(&FeedbackCommand {
-            topic: topic.clone(),
-            id: id.clone(),
-        })
+    // The list remains valid even when demotion auto-deletes the item.
+    svc.demote(&FeedbackCommand { topic, id })
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    // An auto-deleted record's detail page would 404; land on the list.
-    if matches!(e.state, crate::domain::State::Deleted) {
-        return Ok(Redirect::to("/"));
-    }
-    Ok(Redirect::to(&experience_path(&topic, &id)))
+    Ok(list_redirect(&uri))
 }
 
 async fn delete_action<R: ExperienceRepo + VectorStore>(
