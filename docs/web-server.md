@@ -42,10 +42,14 @@ REST, web, and HTTP MCP do not expose configuration controls.
   characters plus `…` when longer; full values are preserved. The `Ops` column
   is 5% of the table width and uses three lines: red `✘` delete
   then `✎` edit; `★` promote with the good count; and `☆` demote with the bad
-  count. Feedback actions return to `/` with the current `q`, `topic`, and
-  `deep` filters, showing the updated counts. Search/topic filters are widened,
-  and the table scrolls horizontally on narrow screens. The edit form uses
-  full-width multiline textareas for `when`, `if`, `do`, and `check`.
+  count. Feedback actions return to `/` with the current `q`, `topic`, `deep`,
+  `limit`, and `offset`, preserving the current page. Search/topic filters are
+  widened, and the table scrolls horizontally on narrow screens. The edit form
+  uses full-width multiline textareas for `when`, `if`, `do`, and `check`.
+- The list defaults to 20 results per page and provides Previous/Next controls
+  with a page indicator. Navigation preserves `q`, `topic`, `deep`, and `limit`
+  while advancing or rewinding `offset`; submitting new filters preserves
+  `limit` and returns to the first page.
 - The add form matches the edit form's wide layout and full-width multiline
   textareas for `when`, `if`, `do`, and `check`; `topic` remains a single-line
   input.

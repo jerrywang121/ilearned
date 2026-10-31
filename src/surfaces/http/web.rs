@@ -6,6 +6,7 @@ use axum::routing::{get, post};
 use axum::{Form, Router};
 use serde::Deserialize;
 
+use crate::application::MAX_LIMIT;
 use crate::domain::commands::{
     AddCommand, ClearCommand, FeedbackCommand, SearchQuery, TopicQuery, UpdateCommand,
 };
@@ -71,12 +72,13 @@ struct BaseTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:5%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:5%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}.pagination{display:flex;align-items:center;justify-content:center;gap:1em;margin:1em 0}</style>
 </head><body>
 <h1>ilearned</h1>
 <form id="search" method="get" action="/">
 <input name="q" value="{{ query }}" placeholder="search text">
 <input name="topic" value="{{ topic }}" placeholder="topic">
+<input type="hidden" name="limit" value="{{ limit }}">
 <label><input type="checkbox" name="deep" value="true" {% if deep %}checked{% endif %}> deep</label>
 <button type="submit">Search</button>
 </form>
@@ -93,12 +95,19 @@ struct BaseTemplate {
 <td class="experience-text">{{ e.check_text }}</td>
 <td class="ops">
 <div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/delete"><input type="hidden" name="confirm" value="yes"><button type="submit" class="delete-op" title="Delete" aria-label="Delete {{ e.topic }}/{{ e.id }}">✘</button></form><a href="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/edit" title="Edit" aria-label="Edit {{ e.topic }}/{{ e.id }}">✎</a></div>
-<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form><span class="op-count" aria-label="Good count: {{ e.good_count }}">{{ e.good_count }}</span></div>
-<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form><span class="op-count" aria-label="Bad count: {{ e.bad_count }}">{{ e.bad_count }}</span></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/promote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}&amp;limit={{ limit }}&amp;offset={{ offset }}"><button type="submit" title="Promote" aria-label="Promote {{ e.topic }}/{{ e.id }}">★</button></form><span class="op-count" aria-label="Good count: {{ e.good_count }}">{{ e.good_count }}</span></div>
+<div class="ops-line"><form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}/demote?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}&amp;limit={{ limit }}&amp;offset={{ offset }}"><button type="submit" title="Demote" aria-label="Demote {{ e.topic }}/{{ e.id }}">☆</button></form><span class="op-count" aria-label="Bad count: {{ e.bad_count }}">{{ e.bad_count }}</span></div>
 </td>
 </tr>
 {% endfor %}
 </tbody></table></div>
+{% if limit > 0 %}
+<nav class="pagination" aria-label="Pagination">
+{% if has_previous %}<a rel="prev" href="/?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}&amp;limit={{ limit }}&amp;offset={{ previous_offset }}">Previous</a>{% endif %}
+<span>Page {{ page_number }}</span>
+{% if has_next %}<a rel="next" href="/?q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}&amp;limit={{ limit }}&amp;offset={{ next_offset }}">Next</a>{% endif %}
+</nav>
+{% endif %}
 </body></html>"#,
     ext = "html"
 )]
@@ -106,6 +115,13 @@ struct SearchTemplate {
     query: String,
     topic: String,
     deep: bool,
+    limit: u32,
+    offset: u32,
+    previous_offset: u32,
+    next_offset: u32,
+    page_number: u64,
+    has_previous: bool,
+    has_next: bool,
     results: Vec<ExperienceTableRow>,
 }
 
@@ -330,16 +346,46 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Query(p): Query<IndexParams>,
 ) -> Result<Html<String>, WebErr> {
+    let limit = p.limit.unwrap_or(20).min(MAX_LIMIT);
+    let offset = p.offset.unwrap_or(0);
+    let deep = p.deep.unwrap_or(false);
+    let query = SearchQuery {
+        topic: p.topic.clone().filter(|s| !s.trim().is_empty()),
+        text: p.q.clone().filter(|s| !s.trim().is_empty()),
+        semantic: None,
+        limit,
+        offset,
+        deep,
+    };
+    let mut page_query = query.clone();
+    if limit > 0 && limit < MAX_LIMIT {
+        page_query.limit += 1;
+    }
     let mut results = svc
-        .search(&SearchQuery {
-            topic: p.topic.clone().filter(|s| !s.trim().is_empty()),
-            text: p.q.clone().filter(|s| !s.trim().is_empty()),
-            semantic: None,
-            limit: p.limit.unwrap_or(20),
-            offset: p.offset.unwrap_or(0),
-            deep: p.deep.unwrap_or(false),
-        })
+        .search(&page_query)
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    let next_offset = offset.checked_add(limit);
+    let has_next = if limit == 0 {
+        false
+    } else if let Some(next_offset) = next_offset {
+        if limit < MAX_LIMIT {
+            results.len() > limit as usize
+        } else if results.len() < limit as usize {
+            false
+        } else {
+            let next_query = SearchQuery {
+                limit: 1,
+                offset: next_offset,
+                ..query
+            };
+            !svc.search(&next_query)
+                .map_err(|e| WebErr(Box::new(svc_err(e))))?
+                .is_empty()
+        }
+    } else {
+        false
+    };
+    results.truncate(limit as usize);
     results.sort_by(|left, right| {
         left.topic
             .cmp(&right.topic)
@@ -349,7 +395,14 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
     let t = SearchTemplate {
         query: p.q.unwrap_or_default(),
         topic: p.topic.unwrap_or_default(),
-        deep: p.deep.unwrap_or(false),
+        deep,
+        limit,
+        offset,
+        previous_offset: offset.saturating_sub(limit),
+        next_offset: next_offset.unwrap_or(offset),
+        page_number: u64::from(offset) / u64::from(limit.max(1)) + 1,
+        has_previous: limit > 0 && offset > 0,
+        has_next,
         results,
     };
     Ok(Html(t.render().map_err(|e| {

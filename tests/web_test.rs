@@ -389,7 +389,7 @@ async fn index_renders_topic_sorted_table_with_operations() {
     assert!(index.contains(&format!(r#"href="/experiences/alpha/{}/edit""#, alpha_id)));
     for operation in ["promote", "demote"] {
         assert!(index.contains(&format!(
-            r#"action="/experiences/alpha/{}/{}?q=&amp;topic=&amp;deep=false""#,
+            r#"action="/experiences/alpha/{}/{}?q=&amp;topic=&amp;deep=false&amp;limit=20&amp;offset=0""#,
             alpha_id, operation
         )));
     }
@@ -430,6 +430,175 @@ async fn index_renders_topic_sorted_table_with_operations() {
     assert!(ops_lines[2].contains(&format!("/experiences/alpha/{}/demote", alpha_id)));
     assert!(ops_lines[2].contains(r#">☆</button>"#));
     assert!(ops_lines[2].contains(r#"class="op-count" aria-label="Bad count: 0">0</span>"#));
+}
+
+#[tokio::test]
+async fn index_paginates_and_preserves_filters() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+
+    for ordinal in 0..21 {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({
+                "topic": "pagination",
+                "when": format!("pagination item {ordinal}"),
+                "if": "pagination trigger",
+                "do": "pagination action",
+                "check": "pagination result"
+            }))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+
+    let first_page = client
+        .get(srv.url("/?q=pagination&topic=pagination&deep=true"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(first_page.matches("<tr>").count(), 21);
+    let search_form = first_page.split("</form>").next().unwrap();
+    assert!(search_form.contains(r#"<input type="hidden" name="limit" value="20">"#));
+    assert!(!search_form.contains("offset"));
+    assert!(!first_page.contains(r#">Previous</a>"#));
+    assert!(first_page.contains("Page 1"));
+    assert!(first_page.contains(
+        r#"href="/?q=pagination&amp;topic=pagination&amp;deep=true&amp;limit=20&amp;offset=20""#
+    ));
+    assert!(first_page.contains(r#">Next</a>"#));
+
+    let last_page = client
+        .get(srv.url("/?q=pagination&topic=pagination&deep=true&limit=20&offset=20"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(last_page.matches("<tr>").count(), 2);
+    assert!(last_page.contains("Page 2"));
+    assert!(last_page.contains(
+        "/promote?q=pagination&amp;topic=pagination&amp;deep=true&amp;limit=20&amp;offset=20"
+    ));
+    assert!(last_page.contains(
+        "/demote?q=pagination&amp;topic=pagination&amp;deep=true&amp;limit=20&amp;offset=20"
+    ));
+    assert!(last_page.contains(
+        r#"href="/?q=pagination&amp;topic=pagination&amp;deep=true&amp;limit=20&amp;offset=0""#
+    ));
+    assert!(last_page.contains(r#">Previous</a>"#));
+    assert!(!last_page.contains(r#">Next</a>"#));
+
+    let exactly_one_page = client
+        .get(srv.url("/?q=pagination&topic=pagination&deep=true&limit=21"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(exactly_one_page.matches("<tr>").count(), 22);
+    assert!(!exactly_one_page.contains(r#">Next</a>"#));
+}
+
+#[tokio::test]
+async fn index_omits_pagination_for_zero_limit() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let index = client
+        .get(srv.url("/?limit=0&offset=20"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    assert!(!index.contains("Page "));
+    assert!(!index.contains(r#"<nav class="pagination""#));
+}
+
+#[tokio::test]
+async fn index_paginates_at_the_maximum_page_size() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+
+    for ordinal in 0..101 {
+        let topic = if ordinal < 100 {
+            "maxpage"
+        } else {
+            "otherpage"
+        };
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({
+                "topic": topic,
+                "when": format!("maxpage item {ordinal}"),
+                "if": "maxpage trigger",
+                "do": "maxpage action",
+                "check": "maxpage result"
+            }))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+
+    let exactly_max_page = client
+        .get(srv.url("/?q=maxpage&topic=maxpage&limit=100"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(exactly_max_page.matches("<tr>").count(), 101);
+    assert!(!exactly_max_page.contains(r#">Next</a>"#));
+
+    let first_page = client
+        .get(srv.url("/?q=maxpage&limit=100"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(first_page.matches("<tr>").count(), 101);
+    assert!(first_page
+        .contains(r#"href="/?q=maxpage&amp;topic=&amp;deep=false&amp;limit=100&amp;offset=100""#));
+
+    let last_page = client
+        .get(srv.url("/?q=maxpage&limit=100&offset=100"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(last_page.matches("<tr>").count(), 2);
+    assert!(last_page.contains(r#">Previous</a>"#));
+    assert!(!last_page.contains(r#">Next</a>"#));
 }
 
 #[tokio::test]
@@ -575,11 +744,11 @@ async fn index_row_actions_encode_nested_topics() {
     for path in [
         format!(r#"href="/experiences/nested%2Fchild/{}/edit""#, id),
         format!(
-            r#"action="/experiences/nested%2Fchild/{}/promote?q=&amp;topic=&amp;deep=false""#,
+            r#"action="/experiences/nested%2Fchild/{}/promote?q=&amp;topic=&amp;deep=false&amp;limit=20&amp;offset=0""#,
             id
         ),
         format!(
-            r#"action="/experiences/nested%2Fchild/{}/demote?q=&amp;topic=&amp;deep=false""#,
+            r#"action="/experiences/nested%2Fchild/{}/demote?q=&amp;topic=&amp;deep=false&amp;limit=20&amp;offset=0""#,
             id
         ),
         format!(r#"action="/experiences/nested%2Fchild/{}/delete""#, id),
@@ -617,7 +786,7 @@ async fn feedback_actions_return_to_filtered_list_with_updated_counts() {
         .await
         .unwrap();
     let id = created["id"].as_str().unwrap();
-    let list_query = "q=needle&topic=feedback&deep=true";
+    let list_query = "q=needle&topic=feedback&deep=true&limit=20&offset=0";
 
     let index = client
         .get(srv.url(&format!("/?{}", list_query)))
@@ -632,7 +801,7 @@ async fn feedback_actions_return_to_filtered_list_with_updated_counts() {
     for action in ["promote", "demote"] {
         assert!(
             index.contains(&format!(
-                r#"action="/experiences/feedback/{}/{}?q=needle&amp;topic=feedback&amp;deep=true""#,
+                r#"action="/experiences/feedback/{}/{}?q=needle&amp;topic=feedback&amp;deep=true&amp;limit=20&amp;offset=0""#,
                 id, action
             )),
             "missing filtered form action; rendered index: {}",
@@ -692,6 +861,24 @@ async fn feedback_actions_return_to_filtered_list_with_updated_counts() {
         .unwrap();
     assert!(demoted_list.contains("Good count: 2"));
     assert!(demoted_list.contains("Bad count: 1"));
+
+    let later_page_query = "q=needle&topic=feedback&deep=true&limit=20&offset=20";
+    let promoted_from_later_page = client
+        .post(srv.url(&format!(
+            "/experiences/feedback/{}/promote?{}",
+            id, later_page_query
+        )))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        promoted_from_later_page.status(),
+        reqwest::StatusCode::SEE_OTHER
+    );
+    let later_page_location = promoted_from_later_page.headers()[reqwest::header::LOCATION]
+        .to_str()
+        .unwrap();
+    assert_eq!(later_page_location, format!("/?{}", later_page_query));
 }
 
 #[tokio::test]
