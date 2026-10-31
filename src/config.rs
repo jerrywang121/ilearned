@@ -460,18 +460,19 @@ fn resolve_embedding_for_show(
         "ILEARNED_EMBED_MODEL",
         file.and_then(|f| f.model.clone()),
     )?;
-    let api_key = resolve_string(
-        None,
-        "ILEARNED_EMBED_API_KEY",
-        file.and_then(|f| f.api_key.clone()),
-    )?;
-    if endpoint.is_none() && model.is_none() && api_key.is_none() {
+    let api_key_configured = env_string("ILEARNED_EMBED_API_KEY")?
+        .filter(|s| !s.trim().is_empty())
+        .is_some()
+        || file
+            .and_then(|f| f.api_key.as_ref())
+            .is_some_and(|s| !s.trim().is_empty());
+    if endpoint.is_none() && model.is_none() && !api_key_configured {
         return Ok(None);
     }
     Ok(Some(ResolvedEmbeddingConfig {
         endpoint,
         model,
-        api_key_configured: api_key.is_some(),
+        api_key_configured,
         dims,
         timeout_secs,
     }))
