@@ -257,10 +257,15 @@ async fn forms_validate_and_confirm() {
     let srv = spawn_server().await;
     let client = reqwest::Client::new();
 
-    // POST add with missing check => 400.
+    // POST add with missing do => 400.
     let r = client
         .post(srv.url("/experiences"))
-        .form(&[("topic", "t"), ("when", "w"), ("if", "i"), ("do", "d")])
+        .form(&[
+            ("topic", "t"),
+            ("when_text", "w"),
+            ("if_text", "i"),
+            ("check", "c"),
+        ])
         .send()
         .await
         .unwrap();
@@ -298,6 +303,75 @@ async fn forms_validate_and_confirm() {
         .await
         .unwrap();
     assert_eq!(still.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn web_adds_fact_and_clears_optional_fields() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let response = client
+        .post(srv.url("/experiences"))
+        .form(&[("topic", "fact"), ("do_text", "remember Bob likes Blues")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::SEE_OTHER);
+    let location = response.headers()[reqwest::header::LOCATION]
+        .to_str()
+        .unwrap();
+    let edit_url = srv.url(location);
+    let initial = client
+        .post(&edit_url)
+        .form(&[("when_text", "w"), ("if_text", "i"), ("check", "c")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(initial.status(), reqwest::StatusCode::SEE_OTHER);
+    let before: serde_json::Value = client
+        .get(srv.url("/api/v1/experiences?topic=fact"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(before[0]["when"], "w");
+    assert_eq!(before[0]["if"], "i");
+    assert_eq!(before[0]["check"], "c");
+    let cleared = client
+        .post(&edit_url)
+        .form(&[
+            ("when_text", ""),
+            ("if_text", "  "),
+            ("check", ""),
+            ("do_text", " "),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cleared.status(), reqwest::StatusCode::SEE_OTHER);
+    let found: serde_json::Value = client
+        .get(srv.url("/api/v1/experiences?topic=fact"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(found[0]["when"], "");
+    assert_eq!(found[0]["if"], "");
+    assert_eq!(found[0]["check"], "");
+    assert_eq!(found[0]["do"], "remember Bob likes Blues");
+    let invalid = client
+        .post(srv.url("/experiences"))
+        .form(&[("topic", "fact"), ("do_text", " ")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), reqwest::StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -898,21 +972,12 @@ async fn add_form_uses_wide_multiline_fields() {
 
     assert!(add.contains(r#"<form method="post" action="/experiences">"#));
     assert!(add.contains(r#"<input name="topic" required>"#));
-    for (name, label) in [
-        ("when_text", "when"),
-        ("if_text", "if"),
-        ("do_text", "do"),
-        ("check", "check"),
-    ] {
-        assert!(
-            add.contains(&format!(
-                r#"<label>{} <textarea name="{}" required></textarea></label>"#,
-                label, name
-            )),
-            "{} should be a required multiline field",
-            label
-        );
+    for (name, label) in [("when_text", "when"), ("if_text", "if"), ("check", "check")] {
+        assert!(add.contains(&format!(
+            r#"<label>{label} (optional) <textarea name="{name}"></textarea></label>"#
+        )));
     }
+    assert!(add.contains(r#"<label>do <textarea name="do_text" required></textarea></label>"#));
     assert!(add.contains("max-width:96vw"));
     assert!(add.contains("textarea{display:block;width:100%"));
     assert!(add.contains(">Add</button>"));

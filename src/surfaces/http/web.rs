@@ -201,10 +201,10 @@ struct DetailTemplate {
 <h1>iLearned <small>v{{ version }}</small> · add · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form method="post" action="/experiences">
 <label>topic <input name="topic" required></label>
-<label>when <textarea name="when_text" required></textarea></label>
-<label>if <textarea name="if_text" required></textarea></label>
+<label>when (optional) <textarea name="when_text"></textarea></label>
+<label>if (optional) <textarea name="if_text"></textarea></label>
 <label>do <textarea name="do_text" required></textarea></label>
-<label>check <textarea name="check" required></textarea></label>
+<label>check (optional) <textarea name="check"></textarea></label>
 <button type="submit">Add</button>
 </form>
 <p><a href="/">back</a></p>
@@ -457,10 +457,10 @@ async fn add_submit<R: ExperienceRepo + VectorStore>(
 ) -> Result<Redirect, WebErr> {
     let cmd = AddCommand {
         topic: req(f.topic, "topic").map_err(|e| WebErr(Box::new(svc_err(e))))?,
-        when_text: req(f.when_text, "when").map_err(|e| WebErr(Box::new(svc_err(e))))?,
-        if_text: req(f.if_text, "if").map_err(|e| WebErr(Box::new(svc_err(e))))?,
+        when_text: f.when_text.unwrap_or_default(),
+        if_text: f.if_text.unwrap_or_default(),
         do_text: req(f.do_text, "do").map_err(|e| WebErr(Box::new(svc_err(e))))?,
-        check_text: req(f.check, "check").map_err(|e| WebErr(Box::new(svc_err(e))))?,
+        check_text: f.check.unwrap_or_default(),
     };
     let e = svc.add(cmd).map_err(|e| WebErr(Box::new(svc_err(e))))?;
     Ok(Redirect::to(&experience_path(&e.topic, &e.id)))
@@ -492,14 +492,13 @@ async fn edit_submit<R: ExperienceRepo + VectorStore>(
     Path((topic, id)): Path<(String, String)>,
     Form(f): Form<ExperienceForm>,
 ) -> Result<Redirect, WebErr> {
-    let clean = |o: Option<String>| o.filter(|s| !s.trim().is_empty());
     let cmd = UpdateCommand {
         topic: topic.clone(),
         id: id.clone(),
-        when_text: clean(f.when_text),
-        if_text: clean(f.if_text),
-        do_text: clean(f.do_text),
-        check_text: clean(f.check),
+        when_text: f.when_text,
+        if_text: f.if_text,
+        do_text: f.do_text,
+        check_text: f.check,
     };
     if !cmd.has_updates() {
         return Err(WebErr(Box::new(err_page(

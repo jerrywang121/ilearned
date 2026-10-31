@@ -15,11 +15,12 @@
 - Clear responses report `num_of_items` newly transitioned to `deleted` and
   `num_of_topics` as the number of unique topics represented by those items.
 - Bodies/query use public field names (`when,if,do,check`); timestamps
-  RFC 3339. Add example:
-  `{"topic":"rust","when":"...","if":"...","do":"...","check":"..."}`
-  (all five required, blanks rejected). Update accepts any non-blank
-  subset of `when/if/do/check` (blank-only values are ignored, so an
-  all-blank update is a 400).
+  are RFC 3339. Add requires a valid `topic` and non-blank `do`; `when`, `if`,
+  and `check` are optional and omitted or blank values are stored as empty
+  strings. Example: `{"topic":"fact","do":"remember Bob likes Blues"}`.
+  Update leaves omitted fields unchanged. Empty or whitespace-only `when`,
+  `if`, or `check` clears that field; blank `do` is ignored. An update with no
+  effective fields is a 400. JSON `null` is treated as omitted.
 - Pagination: default `limit=20 offset=0`; `limit` is clamped to
   `MAX_LIMIT=100` (larger values behave as 100, no error); `limit=0` and
   over-range `offset` return `[]`.

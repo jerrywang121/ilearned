@@ -144,18 +144,18 @@ pub struct AddArgs {
     /// Hierarchical topic, e.g. travel/hotel/checkout.
     #[arg(long, help = TOPIC_HELP)]
     pub topic: String,
-    /// Scenario this experience applies to, including context, conditions, and constraints.
+    /// Optional scenario, context, conditions, and constraints.
     #[arg(long = "when")]
-    pub when: String,
-    /// Trigger(s), e.g. something happened, observed, or detected.
+    pub when: Option<String>,
+    /// Optional trigger(s), e.g. something observed or detected.
     #[arg(long = "if")]
-    pub if_: String,
-    /// Action(s) the agent should take / try, include steps, procedures, and instructions.
+    pub if_: Option<String>,
+    /// Required action, instruction, or fact to remember.
     #[arg(long = "do")]
     pub do_: String,
-    /// Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action.
+    /// Optional signals to verify the experience or outcome.
     #[arg(long)]
-    pub check: String,
+    pub check: Option<String>,
     #[command(flatten)]
     pub output: JsonArgs,
 }
@@ -192,16 +192,16 @@ pub struct UpdateArgs {
     /// Id of the record to update.
     #[arg(long)]
     pub id: String,
-    /// New scenario text (blank values ignored).
+    /// New scenario text; empty or whitespace clears it.
     #[arg(long = "when")]
     pub when: Option<String>,
-    /// New trigger text (blank values ignored).
+    /// New trigger text; empty or whitespace clears it.
     #[arg(long = "if")]
     pub if_: Option<String>,
-    /// New action text (blank values ignored).
+    /// New action or fact text (blank values ignored).
     #[arg(long = "do")]
     pub do_: Option<String>,
-    /// New check text (blank values ignored).
+    /// New check text; empty or whitespace clears it.
     #[arg(long)]
     pub check: Option<String>,
     #[command(flatten)]

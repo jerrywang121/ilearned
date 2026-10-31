@@ -32,7 +32,7 @@
 - Tools (9): `search`, `add`, `update`, `delete`, `promote`, `demote`,
   `clear`, `topics_list`, `topics_search`. Argument schemas mirror the domain commands exactly:
   `search{topic?,text?,semantic?,limit?,offset?,deep?}`,
-  `add{topic,when,if,do,check}` (`if`/`do` are serde-renamed `if_text`/
+  `add{topic,do,when?,if?,check?}` (`if`/`do` are serde-renamed `if_text`/
   `do_text` fields), `update{topic,id,when?,if?,do?,check?}`,
   `delete/promote/demote{topic,id}`, `clear{topic?,all?,confirm}`
   (destructive `clear` requires `confirm: true` plus exactly one of
@@ -41,6 +41,12 @@
   `topics_search{query,level?,limit?,offset?,deep?}` (`query` is a
   substring or `#` multi-level wildcard pattern).
   Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`).
+  Add requires a valid `topic` and non-blank `do`; omitted or blank optional
+  fields are stored as empty strings. For example,
+  `{"topic":"fact","do":"remember Bob likes Blues"}`. On update, omitted
+  fields stay unchanged; empty or whitespace-only `when`, `if`, or `check`
+  clears it. Blank `do` is ignored and no effective update is invalid. JSON
+  `null` is treated as omitted. The same rules apply to both transports.
   Mutation results use these JSON shapes: `add` returns
   `{"added":{"topic":"...","id":"..."}}`; `update` returns
   `{"modified":{"topic":"...","id":"..."}}`; `delete` returns

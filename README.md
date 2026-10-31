@@ -1,6 +1,6 @@
 # ilearned
 
-> Lightweight, local-first memory for self-improving AI agents — a live rule book of learned experiences, not just plain facts.
+> Lightweight, local-first memory for self-improving AI agents — a live rule book of learned experiences and facts.
 
 [![Build](https://img.shields.io/badge/build-cargo%20test-green)](docs/development.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -8,17 +8,17 @@
 
 ## What it is
 
-Agents learn by doing. `ilearned` stores those lessons as **experiences** — structured rules (when / if / do / check) grouped by topic — that the agent can search, apply, and continuously refine.
+Agents learn by doing. `ilearned` stores those lessons and facts as **experiences** grouped by topic, with an action or fact (`do`) and optional context (`when`, `if`, `check`), that the agent can search, apply, and continuously refine.
 
 Each experience records:
 
 | Field | Meaning |
 | --- | --- |
 | `topic` / `id` | Compound key; `id` is an 8-char unique id within the topic |
-| `when` | Scenario this experience applies to, including context, conditions, and constraints. |
-| `if` | Trigger(s), e.g. something happened, observed, or detected. |
-| `do` | Action(s) the agent should take / try, include steps, procedures, and instructions. |
-| `check` | Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action. |
+| `when` | Optional scenario, context, conditions, and constraints. |
+| `if` | Optional triggers or observations. |
+| `do` | Required non-blank action, instruction, or fact to remember. |
+| `check` | Optional signals to verify the experience or outcome. |
 | `updated_at` | Creation / last-update timestamp (RFC 3339 on the wire) |
 | `good_count` / `bad_count` | Positive / negative feedback tallies (`add` sets `1` / `0`) |
 | `state` | `active` (default on `add`) / `inactive` / `deleted` / `forgotten` (internal maintenance) |
@@ -75,6 +75,9 @@ cargo build --release
 ilearned add --topic "travel/hotel/booking" --when "family trip" --if "child age < 1y old" \
   --do "request baby cot" --check "hotel website states baby cot available"
 
+# A fact only needs a topic and do
+ilearned add --topic fact --do "remember Bob likes Blues"
+
 # Search it (human output by default, --json for agents/scripts)
 ilearned search --topic "travel/#" --text child --json
 
@@ -108,7 +111,7 @@ to continue improve ai agent performance over time
 ```text
 ilearned [--config-file PATH] <command>
 
-ilearned add --topic TOPIC --when TEXT --if TEXT --do TEXT --check TEXT [--json]
+ilearned add --topic TOPIC --do TEXT [--when TEXT] [--if TEXT] [--check TEXT] [--json]
 ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
                   [--limit N] [--offset N] [--deep] [--json]
 ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
@@ -135,7 +138,7 @@ ilearned mcp
 - Distributed binaries include bundled SQLCipher/OpenSSL components; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 - Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `update` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}` (`state` is `"deleted"` when a demote crossed the auto-delete threshold); and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label (demote appends `[auto-deleted]` when the record was auto-deleted). `config init` prints only the generated file path.
 - Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
-- `update` needs at least one non-blank field (blank-only values are ignored).
+- `add` requires a valid topic and non-blank `--do`; omitted or blank `--when`, `--if`, and `--check` are stored as empty strings. `update` leaves omitted fields unchanged; an empty or whitespace-only optional field clears it (for example `--when ""`). Blank `--do` is ignored, and an update with no effective fields is rejected.
 - Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` always dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
 - Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
 

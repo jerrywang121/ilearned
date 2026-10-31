@@ -27,6 +27,9 @@
   check_text, updated_at (INTEGER epoch seconds), good_count, bad_count,
   state ('active'|'inactive'|'deleted'|'forgotten'), retention_started_at
   (INTEGER, nullable, internal — never in the public shape)`.
+- The four text columns remain non-null strings. Missing or cleared optional
+  `when`, `if`, and `check` values are stored as empty strings; existing
+  databases require no migration. `do` must be non-blank on add/import.
 - FTS5 table `experiences_fts` over
   `topic, when_text, if_text, do_text, check_text` with after-insert/
   after-delete/after-update sync triggers plus a `rebuild_fts` recovery

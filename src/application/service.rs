@@ -138,6 +138,13 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         Ok(vector)
     }
 
+    fn normalize_optional(mut value: String) -> String {
+        if value.trim().is_empty() {
+            value.clear();
+        }
+        value
+    }
+
     fn doc_text(e: &Experience) -> String {
         format!(
             "{} {} {} {}",
@@ -164,8 +171,11 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         }
     }
 
-    pub fn add(&self, cmd: AddCommand) -> Result<Experience, AppError> {
+    pub fn add(&self, mut cmd: AddCommand) -> Result<Experience, AppError> {
         cmd.validate()?;
+        cmd.when_text = Self::normalize_optional(cmd.when_text);
+        cmd.if_text = Self::normalize_optional(cmd.if_text);
+        cmd.check_text = Self::normalize_optional(cmd.check_text);
         self.reconcile()?;
         let now = Utc::now();
         for _ in 0..2 {
@@ -232,17 +242,17 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                 });
             }
         };
-        if let Some(w) = cmd.when_text.filter(|s| !s.trim().is_empty()) {
-            e.when_text = w;
+        if let Some(w) = cmd.when_text {
+            e.when_text = Self::normalize_optional(w);
         }
-        if let Some(i) = cmd.if_text.filter(|s| !s.trim().is_empty()) {
-            e.if_text = i;
+        if let Some(i) = cmd.if_text {
+            e.if_text = Self::normalize_optional(i);
         }
         if let Some(d) = cmd.do_text.filter(|s| !s.trim().is_empty()) {
             e.do_text = d;
         }
-        if let Some(c) = cmd.check_text.filter(|s| !s.trim().is_empty()) {
-            e.check_text = c;
+        if let Some(c) = cmd.check_text {
+            e.check_text = Self::normalize_optional(c);
         }
         let e = self.restore(e);
         self.repo.update(&e)?;
@@ -320,17 +330,8 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
         if e.id.trim().is_empty() {
             return Err(AppError::InvalidInput("id is required".to_string()));
         }
-        if e.when_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("when is required".to_string()));
-        }
-        if e.if_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("if is required".to_string()));
-        }
         if e.do_text.trim().is_empty() {
             return Err(AppError::InvalidInput("do is required".to_string()));
-        }
-        if e.check_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("check is required".to_string()));
         }
         Ok(())
     }
@@ -358,6 +359,9 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
     /// overwrites on collision; otherwise assigns a fresh id.
     pub fn import_record(&self, mut e: Experience, merge: bool) -> Result<ImportOutcome, AppError> {
         Self::validate_import(&e)?;
+        e.when_text = Self::normalize_optional(e.when_text);
+        e.if_text = Self::normalize_optional(e.if_text);
+        e.check_text = Self::normalize_optional(e.check_text);
         self.reconcile()?;
         if !merge {
             e.id = Uuid::new_v4().to_string()[..8].to_string();

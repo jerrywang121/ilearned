@@ -26,10 +26,10 @@ pub fn run_cli<R: ExperienceRepo + VectorStore>(
         Commands::Add(a) => {
             let e = svc.add(AddCommand {
                 topic: a.topic.clone(),
-                when_text: a.when.clone(),
-                if_text: a.if_.clone(),
+                when_text: a.when.clone().unwrap_or_default(),
+                if_text: a.if_.clone().unwrap_or_default(),
                 do_text: a.do_.clone(),
-                check_text: a.check.clone(),
+                check_text: a.check.clone().unwrap_or_default(),
             })?;
             Ok(render_identity(&e.topic, &e.id, json, "added"))
         }

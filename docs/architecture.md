@@ -71,6 +71,11 @@ initialization, migrations, and all surface adapters.
   existing project-local `./.ilearned/ilearned.db`, then an existing XDG data
   database; startup fails when none is configured or present.
 - Single-user local-first; no authentication.
+- `add` requires a valid topic and non-blank `do`; optional `when`, `if`, and
+  `check` are stored as empty strings when omitted or blank. On `update`, an
+  omitted field is unchanged, a blank optional field is cleared, and a blank
+  `do` is ignored; no effective update is invalid. Import accepts missing or
+  empty optional values, including those emitted by export.
 - Explicit `(topic, id)` reads go through `MemoryService::get` (sole entry):
   reconciles first, `deleted`/missing read as `NotFound`; `forgotten` and
   `inactive` remain reachable here (search still hides them).

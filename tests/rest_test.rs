@@ -155,14 +155,87 @@ async fn healthz_and_crud() {
 }
 
 #[tokio::test]
+async fn rest_adds_fact_and_clears_optional_fields() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let created: Value = client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({"topic":"fact", "do":"remember Bob likes Blues", "if":"  "}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(created["when"], "");
+    assert_eq!(created["if"], "");
+    assert_eq!(created["check"], "");
+    let url = srv.url(&format!(
+        "/api/v1/experiences/fact/{}",
+        created["id"].as_str().unwrap()
+    ));
+    let before: Value = client
+        .patch(&url)
+        .json(&serde_json::json!({"when":"w","if":"i","check":"c"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(before["when"], "w");
+    assert_eq!(before["if"], "i");
+    assert_eq!(before["check"], "c");
+    let changed: Value = client
+        .patch(&url)
+        .json(&serde_json::json!({"when":"", "if":"  ", "check":"", "do":" "}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(changed["when"], "");
+    assert_eq!(changed["if"], "");
+    assert_eq!(changed["check"], "");
+    assert_eq!(changed["do"], "remember Bob likes Blues");
+    assert_eq!(
+        client
+            .patch(&url)
+            .json(&serde_json::json!({"do":" "}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic":"fact", "do":" "}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
 async fn error_mapping() {
     let srv = spawn_server().await;
     let client = reqwest::Client::new();
 
-    // Invalid add (missing check) => 400.
+    // Invalid add (missing do) => 400.
     let r = client
         .post(srv.url("/api/v1/experiences"))
-        .json(&serde_json::json!({"topic":"t","when":"w","if":"i","do":"d"}))
+        .json(&serde_json::json!({"topic":"t","when":"w","if":"i","check":"c"}))
         .send()
         .await
         .unwrap();

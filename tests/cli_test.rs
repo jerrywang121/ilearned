@@ -67,6 +67,125 @@ fn add_search_json_roundtrip() {
 }
 
 #[test]
+fn cli_adds_fact_and_clears_optional_fields() {
+    let dir = TempDir::new().unwrap();
+    let config = db_arg(&dir);
+    let added = Command::new(bin())
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--json",
+            "--topic",
+            "fact",
+            "--do",
+            "remember Bob likes Blues",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    let id = added["added"]["id"].as_str().unwrap();
+    let run_update = |args: &[&str]| {
+        Command::new(bin())
+            .args([
+                "--config-file",
+                &config,
+                "update",
+                "--topic",
+                "fact",
+                "--id",
+                id,
+            ])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(
+        run_update(&["--when", "context", "--if", "trigger", "--check", "signal"])
+            .status
+            .success()
+    );
+    let before = Command::new(bin())
+        .args([
+            "--config-file",
+            &config,
+            "search",
+            "--json",
+            "--topic",
+            "fact",
+        ])
+        .output()
+        .unwrap();
+    assert!(before.status.success());
+    let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
+    assert_eq!(before[0]["when"], "context");
+    assert_eq!(before[0]["if"], "trigger");
+    assert_eq!(before[0]["check"], "signal");
+    let cleared = run_update(&["--when", "", "--if", " ", "--check", ""]);
+    assert!(
+        cleared.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cleared.stderr)
+    );
+    let found = Command::new(bin())
+        .args([
+            "--config-file",
+            &config,
+            "search",
+            "--json",
+            "--topic",
+            "fact",
+        ])
+        .output()
+        .unwrap();
+    let found: serde_json::Value = serde_json::from_slice(&found.stdout).unwrap();
+    assert_eq!(found[0]["when"], "");
+    assert_eq!(found[0]["if"], "");
+    assert_eq!(found[0]["check"], "");
+    assert_eq!(found[0]["do"], "remember Bob likes Blues");
+    assert!(!run_update(&["--do", " "]).status.success());
+    assert!(!Command::new(bin())
+        .args([
+            "--config-file",
+            &config,
+            "add",
+            "--topic",
+            "fact",
+            "--do",
+            " "
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success());
+}
+
+#[test]
+fn cli_help_explains_optional_fields_and_clearing() {
+    let add = Command::new(bin())
+        .args(["add", "--help"])
+        .output()
+        .unwrap();
+    let add = String::from_utf8(add.stdout).unwrap();
+    assert!(add.contains("Optional scenario"));
+    assert!(add.contains("Optional trigger"));
+    assert!(add.contains("Required action"));
+    assert!(add.contains("Optional signals"));
+    let update = Command::new(bin())
+        .args(["update", "--help"])
+        .output()
+        .unwrap();
+    let update = String::from_utf8(update.stdout).unwrap();
+    assert!(update.contains("whitespace clears"), "{update}");
+    assert!(update.contains("blank values ignored"), "{update}");
+}
+
+#[test]
 fn topic_list_and_search_json() {
     let dir = TempDir::new().unwrap();
     let db = db_arg(&dir);

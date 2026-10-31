@@ -165,6 +165,79 @@ fn add_modify_promote_delete_flow() {
 }
 
 #[test]
+fn add_allows_optional_fields_and_normalizes_blank_values() {
+    let (_dir, service) = svc();
+    let mut cmd = add_cmd("fact");
+    cmd.when_text = "".into();
+    cmd.if_text = "   ".into();
+    cmd.do_text = "remember Bob likes Blues".into();
+    cmd.check_text = "	".into();
+    let added = service.add(cmd).unwrap();
+    assert_eq!(added.when_text, "");
+    assert_eq!(added.if_text, "");
+    assert_eq!(added.check_text, "");
+    assert_eq!(added.do_text, "remember Bob likes Blues");
+    let stored = service.get("fact", &added.id).unwrap();
+    assert_eq!(
+        (
+            stored.when_text.as_str(),
+            stored.if_text.as_str(),
+            stored.do_text.as_str(),
+            stored.check_text.as_str()
+        ),
+        ("", "", "remember Bob likes Blues", "")
+    );
+}
+
+#[test]
+fn update_clears_optional_fields_without_clearing_do_or_omitted_fields() {
+    let (_dir, service) = svc();
+    let added = service.add(add_cmd("fact")).unwrap();
+    let changed = service
+        .update(UpdateCommand {
+            topic: added.topic.clone(),
+            id: added.id.clone(),
+            when_text: Some("".into()),
+            if_text: Some("   ".into()),
+            do_text: Some(" ".into()),
+            check_text: None,
+        })
+        .unwrap();
+    assert_eq!(changed.when_text, "");
+    assert_eq!(changed.if_text, "");
+    assert_eq!(changed.do_text, "restart worker");
+    assert_eq!(changed.check_text, "health ok");
+    let changed = service
+        .update(UpdateCommand {
+            topic: added.topic.clone(),
+            id: added.id.clone(),
+            check_text: Some("".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(changed.check_text, "");
+    let stored = service.get(&added.topic, &added.id).unwrap();
+    assert_eq!(
+        (
+            stored.when_text.as_str(),
+            stored.if_text.as_str(),
+            stored.do_text.as_str(),
+            stored.check_text.as_str()
+        ),
+        ("", "", "restart worker", "")
+    );
+    assert!(matches!(
+        service.update(UpdateCommand {
+            topic: added.topic,
+            id: added.id,
+            do_text: Some(" ".into()),
+            ..Default::default()
+        }),
+        Err(ilearned::AppError::InvalidInput(_))
+    ));
+}
+
+#[test]
 fn search_visibility_and_pagination() {
     let (_d, s) = svc();
     // Seed via service, then flip states directly in storage.

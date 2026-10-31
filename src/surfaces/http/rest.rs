@@ -133,29 +133,25 @@ pub async fn search<R: ExperienceRepo + VectorStore>(
     Ok(Json(out))
 }
 
-/// Add a new experience (body: topic/when/if/do/check, all required, non-blank).
+/// Add an experience: topic and non-blank do are required; when/if/check are optional.
 /// Returns 201 with the created record (good_count=1, state=active).
 pub async fn add<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Json(body): Json<AddRequest>,
 ) -> Result<(StatusCode, Json<crate::domain::experience::Experience>), ApiError> {
-    let some = |o: Option<String>, name: &str| {
-        o.filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| AppError::InvalidInput(format!("{name} is required")))
-    };
     let cmd = AddCommand {
-        topic: some(Some(body.topic), "topic")?,
-        when_text: some(body.when_text, "when")?,
-        if_text: some(body.if_text, "if")?,
-        do_text: some(body.do_text, "do")?,
-        check_text: some(body.check, "check")?,
+        topic: body.topic,
+        when_text: body.when_text.unwrap_or_default(),
+        if_text: body.if_text.unwrap_or_default(),
+        do_text: body.do_text.unwrap_or_default(),
+        check_text: body.check.unwrap_or_default(),
     };
     let e = svc.add(cmd)?;
     Ok((StatusCode::CREATED, Json(e)))
 }
 
-/// Update selected fields of an experience (body: non-blank subset of
-/// when/if/do/check; all-blank is 400). Missing/deleted id is 404.
+/// Update selected fields; empty when/if/check clears them, blank do is ignored.
+/// No effective fields is 400. Missing/deleted id is 404.
 pub async fn update<R: ExperienceRepo + VectorStore>(
     State(svc): State<Shared<R>>,
     Path((topic, id)): Path<(String, String)>,

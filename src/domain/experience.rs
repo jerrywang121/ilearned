@@ -26,13 +26,13 @@ impl std::fmt::Display for State {
 pub struct Experience {
     pub topic: String,
     pub id: String,
-    #[serde(rename = "when")]
+    #[serde(rename = "when", default)]
     pub when_text: String,
-    #[serde(rename = "if")]
+    #[serde(rename = "if", default)]
     pub if_text: String,
     #[serde(rename = "do")]
     pub do_text: String,
-    #[serde(rename = "check")]
+    #[serde(rename = "check", default)]
     pub check_text: String,
     pub updated_at: DateTime<Utc>,
     pub good_count: u64,

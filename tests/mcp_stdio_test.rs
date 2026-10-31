@@ -155,6 +155,54 @@ fn stdio_add_then_search_roundtrip() {
 }
 
 #[test]
+fn stdio_mcp_accepts_minimal_fact() {
+    let dir = TempDir::new().unwrap();
+    let config = config_arg(&dir);
+    let mut c = StdioChild::spawn(&["--config-file", &config, "mcp"], dir.path());
+    handshake(&mut c);
+    let added = c.request("tools/call", serde_json::json!({"name":"add", "arguments":{"topic":"fact", "do":"remember Bob likes Blues"}}));
+    assert!(added.get("error").is_none(), "add must succeed: {added}");
+    assert_ne!(
+        added["result"]["isError"], true,
+        "add must succeed: {added}"
+    );
+    let payload: serde_json::Value =
+        serde_json::from_str(added["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    let id = payload["added"]["id"].as_str().unwrap();
+    let changed = c.request("tools/call", serde_json::json!({"name":"update", "arguments":{"topic":"fact", "id":id, "when":"initial"}}));
+    assert_ne!(
+        changed["result"]["isError"], true,
+        "update must succeed: {changed}"
+    );
+    assert!(changed.get("result").is_some(), "update failed: {changed}");
+    let before = c.request(
+        "tools/call",
+        serde_json::json!({"name":"search", "arguments":{"topic":"fact"}}),
+    );
+    let before: serde_json::Value =
+        serde_json::from_str(before["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(before[0]["when"], "initial");
+    let cleared = c.request(
+        "tools/call",
+        serde_json::json!({"name":"update", "arguments":{"topic":"fact", "id":id, "when":""}}),
+    );
+    assert_ne!(
+        cleared["result"]["isError"], true,
+        "clear must succeed: {cleared}"
+    );
+    assert!(cleared.get("result").is_some(), "clear failed: {cleared}");
+    let found = c.request(
+        "tools/call",
+        serde_json::json!({"name":"search", "arguments":{"topic":"fact"}}),
+    );
+    let rows: serde_json::Value =
+        serde_json::from_str(found["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(rows[0]["when"], "");
+    assert_eq!(rows[0]["do"], "remember Bob likes Blues");
+    c.shutdown();
+}
+
+#[test]
 fn stdio_requires_configured_or_existing_database() {
     let dir = TempDir::new().unwrap();
     // No configured or existing database: startup must fail instead of

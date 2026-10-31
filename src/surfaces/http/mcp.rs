@@ -64,25 +64,19 @@ pub struct SearchArgs {
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct AddArgs {
     #[schemars(
-        description = "Hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated; search accepts # multi-level wildcard"
+        description = "Required hierarchical topic, e.g. travel/hotel/checkout; segments [a-z0-9_-], '/' separated"
     )]
     pub topic: String,
-    #[schemars(
-        description = "Scenario this experience applies to, including context, conditions, and constraints"
-    )]
-    pub when: String,
+    #[schemars(description = "Optional scenario, context, conditions, and constraints")]
+    pub when: Option<String>,
     #[serde(rename = "if")]
-    #[schemars(description = "Trigger(s), e.g. something happened, observed, or detected")]
-    pub if_text: String,
+    #[schemars(description = "Optional trigger(s), e.g. something observed or detected")]
+    pub if_text: Option<String>,
     #[serde(rename = "do")]
-    #[schemars(
-        description = "Action(s) the agent should take / try, include steps, procedures, and instructions"
-    )]
+    #[schemars(description = "Required non-blank action, instruction, or fact to remember")]
     pub do_text: String,
-    #[schemars(
-        description = "Signal(s) to verify the experience was useful, list what to look for to confirm the scenario matches, how to identify triggers, and what can be used to confirm the results of the action"
-    )]
-    pub check: String,
+    #[schemars(description = "Optional signals to verify the experience or outcome")]
+    pub check: Option<String>,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
@@ -91,15 +85,15 @@ pub struct UpdateArgs {
     pub topic: String,
     #[schemars(description = "Id of the record to update")]
     pub id: String,
-    #[schemars(description = "New scenario text (blank values ignored)")]
+    #[schemars(description = "New scenario text; empty or whitespace clears it")]
     pub when: Option<String>,
     #[serde(rename = "if")]
-    #[schemars(description = "New trigger text (blank values ignored)")]
+    #[schemars(description = "New trigger text; empty or whitespace clears it")]
     pub if_text: Option<String>,
     #[serde(rename = "do")]
-    #[schemars(description = "New action text (blank values ignored)")]
+    #[schemars(description = "New action or fact text; blank values are ignored")]
     pub do_text: Option<String>,
-    #[schemars(description = "New check text (blank values ignored)")]
+    #[schemars(description = "New check text; empty or whitespace clears it")]
     pub check: Option<String>,
 }
 
@@ -204,16 +198,18 @@ impl IlearnedTools {
         ok_json(&out)
     }
 
-    #[tool(description = "Add a new experience (sets good_count=1, state=active)")]
+    #[tool(
+        description = "Add an experience or fact: topic and do required; when, if, and check optional (sets good_count=1, state=active)"
+    )]
     fn add(&self, Parameters(a): Parameters<AddArgs>) -> Result<CallToolResult, rmcp::ErrorData> {
         let e = self
             .svc
             .add(AddCommand {
                 topic: a.topic,
-                when_text: a.when,
-                if_text: a.if_text,
+                when_text: a.when.unwrap_or_default(),
+                if_text: a.if_text.unwrap_or_default(),
                 do_text: a.do_text,
-                check_text: a.check,
+                check_text: a.check.unwrap_or_default(),
             })
             .map_err(map_err)?;
         ok_json(&serde_json::json!({
@@ -222,7 +218,7 @@ impl IlearnedTools {
     }
 
     #[tool(
-        description = "Update an existing experience (at least one non-blank field required; blank values ignored)"
+        description = "Update an experience; empty when/if/check clears it, blank do is ignored; at least one effective field required"
     )]
     fn update(
         &self,

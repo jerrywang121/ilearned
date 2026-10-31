@@ -106,20 +106,97 @@ fn import_without_merge_assigns_fresh_ids() {
 }
 
 #[test]
-fn import_rejects_blank_fields() {
+fn import_rejects_blank_required_fields() {
     let (_d, s) = svc();
     let mut bad = exp("t", "abc123xy", "ok");
-    bad.when_text = "   ".to_string();
+    bad.do_text = "   ".to_string();
     assert!(matches!(
         s.import_record(bad, true),
         Err(ilearned::AppError::InvalidInput(_))
     ));
-    let mut bad_id = exp("t", "  ", "ok");
-    let _ = &mut bad_id;
     assert!(matches!(
         s.import_record(exp("t", "  ", "ok"), true),
         Err(ilearned::AppError::InvalidInput(_))
     ));
+}
+
+#[test]
+fn import_accepts_empty_optional_fields() {
+    let (_d, target) = svc();
+    let mut record = exp("fact", "abc123xy", "");
+    record.if_text.clear();
+    record.check_text.clear();
+    assert_eq!(
+        target.import_record(record.clone(), true).unwrap(),
+        ImportOutcome::New
+    );
+    let got = target.get("fact", "abc123xy").unwrap();
+    assert_eq!(
+        (
+            got.when_text.as_str(),
+            got.if_text.as_str(),
+            got.check_text.as_str(),
+            got.do_text.as_str()
+        ),
+        ("", "", "", "d")
+    );
+}
+
+#[test]
+fn import_jsonl_accepts_missing_optional_fields() {
+    let (_d, target) = svc();
+    let mut record = serde_json::to_value(exp("fact", "abc123xy", "irrelevant")).unwrap();
+    let object = record.as_object_mut().unwrap();
+    object.remove("when");
+    object.remove("if");
+    object.remove("check");
+    let summary = target.import_jsonl(&record.to_string(), true).unwrap();
+    assert_eq!(summary.new, 1, "{:?}", summary.errors);
+    let got = target.get("fact", "abc123xy").unwrap();
+    assert_eq!(
+        (
+            got.when_text.as_str(),
+            got.if_text.as_str(),
+            got.check_text.as_str()
+        ),
+        ("", "", "")
+    );
+}
+
+#[test]
+fn import_normalizes_blank_optional_fields() {
+    let (_d, target) = svc();
+    let mut record = exp("fact", "abc123xy", "   ");
+    record.if_text = "	".into();
+    record.check_text = "  ".into();
+    target.import_record(record, true).unwrap();
+    let got = target.get("fact", "abc123xy").unwrap();
+    assert_eq!(
+        (
+            got.when_text.as_str(),
+            got.if_text.as_str(),
+            got.check_text.as_str()
+        ),
+        ("", "", "")
+    );
+}
+
+#[test]
+fn export_import_roundtrip_preserves_empty_optional_fields() {
+    let (_d, source) = svc();
+    let mut cmd = add_cmd("fact", "");
+    cmd.if_text.clear();
+    cmd.check_text.clear();
+    let added = source.add(cmd).unwrap();
+    let exported = source.export(None, false).unwrap();
+    let jsonl = serde_json::to_string(&exported[0]).unwrap();
+    let restored: Experience = serde_json::from_str(&jsonl).unwrap();
+    let (_other_dir, target) = svc();
+    assert_eq!(
+        target.import_record(restored, true).unwrap(),
+        ImportOutcome::New
+    );
+    assert_eq!(target.get("fact", &added.id).unwrap(), exported[0]);
 }
 
 fn bin() -> std::path::PathBuf {

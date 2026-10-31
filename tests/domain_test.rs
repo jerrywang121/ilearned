@@ -14,28 +14,18 @@ fn valid_add() -> AddCommand {
 }
 
 #[test]
-fn add_rejects_empty_topic() {
+fn add_requires_valid_topic_and_nonblank_do() {
     let mut cmd = valid_add();
     cmd.topic.clear();
     assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
-
+    let mut cmd = valid_add();
+    cmd.do_text = "  ".to_string();
+    assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
     let mut cmd = valid_add();
     cmd.when_text.clear();
-    assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
-
-    let mut cmd = valid_add();
     cmd.if_text.clear();
-    assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
-
-    let mut cmd = valid_add();
-    cmd.do_text.clear();
-    assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
-
-    let mut cmd = valid_add();
     cmd.check_text.clear();
-    assert!(matches!(cmd.validate(), Err(AppError::InvalidInput(_))));
-
-    assert!(valid_add().validate().is_ok());
+    assert!(cmd.validate().is_ok());
 }
 
 #[test]
@@ -106,15 +96,25 @@ fn experience_serde_uses_readme_names() {
 }
 
 #[test]
-fn update_blank_strings_are_not_updates() {
-    use ilearned::domain::UpdateCommand;
+fn optional_blank_strings_are_updates_but_blank_do_is_not() {
     let cmd = UpdateCommand {
-        topic: "t".to_string(),
-        id: "x".to_string(),
-        when_text: Some("   ".to_string()),
-        if_text: None,
-        do_text: None,
-        check_text: None,
+        when_text: Some("   ".into()),
+        ..Default::default()
+    };
+    assert!(cmd.has_updates());
+    let cmd = UpdateCommand {
+        if_text: Some("".into()),
+        ..Default::default()
+    };
+    assert!(cmd.has_updates());
+    let cmd = UpdateCommand {
+        check_text: Some("".into()),
+        ..Default::default()
+    };
+    assert!(cmd.has_updates());
+    let cmd = UpdateCommand {
+        do_text: Some("   ".into()),
+        ..Default::default()
     };
     assert!(!cmd.has_updates());
 }

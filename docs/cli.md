@@ -3,7 +3,7 @@
 ```text
 ilearned [--config-file PATH] <command>
 
-ilearned add --topic TOPIC --when TEXT --if TEXT --do TEXT --check TEXT [--json]
+ilearned add --topic TOPIC --do TEXT [--when TEXT] [--if TEXT] [--check TEXT] [--json]
 ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
                   [--limit N] [--offset N] [--deep] [--json]
 ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
@@ -142,9 +142,12 @@ ilearned mcp
   `offset` return `[]`. `text` + `semantic` together fuse both rankings
   with RRF (`k=60`); a semantic query without a provider (or with a
   failing provider) exits 3 instead of silently degrading to text-only.
-- `update` requires at least one non-blank field of
-  `--when/--if/--do/--check` (blank-only values are ignored, so all-blank
-  is rejected).
+- `add` requires a valid topic and non-blank `--do`; `--when`, `--if`, and
+  `--check` are optional. Missing or whitespace-only optional fields are stored
+  as empty strings. For example: `ilearned add --topic fact --do "remember Bob likes Blues"`.
+- `update` leaves omitted fields unchanged. To clear an optional field, pass an
+  empty or whitespace-only value, for example `--when ""` or `--check ""`.
+  Blank `--do` is ignored; an update with no effective fields is rejected.
 - Destructive `delete`/`clear` require explicit confirmation: `--yes` or an
   interactive `y/N` prompt on stderr. Refusal (including EOF on stdin
   without `--yes`) aborts with exit code 2 and changes nothing.
@@ -166,7 +169,10 @@ ilearned mcp
   overwrites on `(topic, id)` collision (updating even soft-deleted rows
   in place); without `--merge` every line gets a fresh id. Malformed or
   invalid lines are skipped with per-line errors on stderr; the good
-  lines still commit. Exit 0 when clean, exit 2 when `E > 0`.
+  lines still commit. Optional `when`, `if`, and `check` may be absent or blank
+  on import and become empty strings; exported empty values round-trip. `topic`,
+  `id`, and non-blank `do` remain required. Exit 0 when clean, exit 2 when
+  `E > 0`.
 - `db encrypt [--yes] [--json]` explicitly converts the resolved plaintext
   database using `ILEARNED_DB_KEY`. It requires the normal destructive-action
   confirmation (`--yes` or interactive `y/N`) and runs before normal keyed

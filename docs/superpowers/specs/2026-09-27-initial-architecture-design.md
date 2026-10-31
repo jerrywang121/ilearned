@@ -4,6 +4,11 @@
 - **Status:** Approved design
 - **Scope:** Initial Rust implementation and first-release documentation
 
+This historical design predates support for facts with optional `when`, `if`,
+and `check` fields and clearing those fields on update. For the current
+contract, see `docs/architecture.md` and the surface documentation; those rules
+supersede the required-field and experience-only claims below.
+
 ## Context and goals
 
 ilearned is a local-first memory-management tool for AI agents. Its records are

@@ -39,12 +39,20 @@ Use slash-separated lowercase segments matching `[a-z0-9_-]`. Prefer depth 2–4
 
 ## Experience Structure
 
-Every experience must fill all four fields with concrete, actionable text:
+Only a valid **topic** and non-blank **do** are required. Add `when`, `if`,
+and `check` when they provide useful context; omit them for a simple lesson
+or fact. Keep supplied text concrete and actionable:
 
-- **when** — Scenario + context + constraints (who, what trip type, constraints, constraints that make this rule relevant).
-- **if** — Observable trigger(s) that fire the experience (error message, user statement, system state, external signal).
-- **do** — Precise action(s) or procedure the agent should execute (steps, API calls, phrasing, checks to perform).
-- **check** — Success / failure signals that confirm the experience applied correctly and the outcome was good.
+- **when** (optional) — Scenario, context, and constraints that make the lesson relevant.
+- **if** (optional) — Observable trigger(s) that fire the experience.
+- **do** (required) — Precise action, procedure, or fact to remember.
+- **check** (optional) — Success / failure signals confirming the outcome.
+
+A minimal MCP `add` can use only:
+
+```json
+{"topic":"travel/visa","do":"Remind travelers to check entry requirements before booking"}
+```
 
 Example:
 
@@ -71,13 +79,13 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 
 ### Add
 - Use when no existing experience covers the scenario at useful specificity.
-- Always supply all four fields; keep each field focused and under ~300 chars when possible.
+- Supply `topic` and non-blank `do`; add `when`, `if`, and `check` only when useful. Keep each field focused and under ~300 chars when possible.
 - Choose the most specific existing topic leaf; create a new leaf only if necessary.
 - After add, note the returned `(topic, id)` for later promote/update.
 
 ### Refine (update)
 - Use when an experience is directionally correct but missing a constraint, step, or check.
-- Supply only the fields that change; at least one non-blank field required.
+- Supply only fields that change. To clear `when`, `if`, or `check`, pass an empty or whitespace-only string, for example `{"topic":"travel/visa","id":"abc12345","when":""}`. Omitted fields stay unchanged; blank `do` is ignored. At least one effective field is required.
 - Prefer refine over creating a near-duplicate.
 - Refining refreshes `updated_at` and restores inactive/forgotten records to active.
 
@@ -125,8 +133,8 @@ check: Hotel confirmation email or portal note mentions baby cot; or alternative
 | Tool | Required args | Notes |
 |------|---------------|-------|
 | `search` | (optional topic/text/semantic/limit/offset/deep) | Primary retrieval |
-| `add` | topic, when, if, do, check | Returns `{added: {topic, id}}` |
-| `update` | topic, id + ≥1 field | Returns `{modified: {topic, id}}` |
+| `add` | topic, do | `when`, `if`, and `check` optional; returns `{added: {topic, id}}` |
+| `update` | topic, id + ≥1 effective field | Empty `when`/`if`/`check` clears it; blank `do` ignored; returns `{modified: {topic, id}}` |
 | `delete` | topic, id | Idempotent on already-deleted |
 | `promote` | topic, id | good_count += 1 |
 | `demote` | topic, id | bad_count += 1 |

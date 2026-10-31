@@ -203,6 +203,63 @@ async fn add_then_search_via_tools() {
 }
 
 #[tokio::test]
+async fn mcp_add_schema_accepts_fact_and_update_clears_optional_fields() {
+    let mut mcp = spawn_client().await;
+    let list = mcp.rpc("tools/list", serde_json::json!({})).await;
+    let tools = list["result"]["tools"].as_array().unwrap();
+    let add_tool = tools.iter().find(|t| t["name"] == "add").unwrap();
+    let required = add_tool["inputSchema"]["required"].as_array().unwrap();
+    assert!(required.contains(&serde_json::json!("topic")));
+    assert!(required.contains(&serde_json::json!("do")));
+    for optional in ["when", "if", "check"] {
+        assert!(
+            !required.contains(&serde_json::json!(optional)),
+            "{optional} must be optional"
+        );
+    }
+    let response = mcp
+        .call(
+            "add",
+            serde_json::json!({"topic":"fact", "do":"remember Bob likes Blues"}),
+        )
+        .await;
+    assert!(response.get("error").is_none(), "{response}");
+    let added = tool_json(&response);
+    let id = added["added"]["id"].as_str().unwrap();
+    let response = mcp
+        .call(
+            "update",
+            serde_json::json!({"topic":"fact", "id":id, "when":"w", "if":"i", "check":"c"}),
+        )
+        .await;
+    assert!(response.get("error").is_none(), "{response}");
+    assert_ne!(response["result"]["isError"], true, "{response}");
+    let before = tool_json(
+        &mcp.call("search", serde_json::json!({"topic":"fact"}))
+            .await,
+    );
+    assert_eq!(before[0]["when"], "w");
+    assert_eq!(before[0]["if"], "i");
+    assert_eq!(before[0]["check"], "c");
+    let response = mcp
+        .call(
+            "update",
+            serde_json::json!({"topic":"fact", "id":id, "when":"", "if":" ", "check":""}),
+        )
+        .await;
+    assert!(response.get("error").is_none(), "{response}");
+    assert_ne!(response["result"]["isError"], true, "{response}");
+    let found = tool_json(
+        &mcp.call("search", serde_json::json!({"topic":"fact"}))
+            .await,
+    );
+    assert_eq!(found[0]["when"], "");
+    assert_eq!(found[0]["if"], "");
+    assert_eq!(found[0]["check"], "");
+    assert_eq!(found[0]["do"], "remember Bob likes Blues");
+}
+
+#[tokio::test]
 async fn mutation_tools_return_enveloped_results() {
     let mut mcp = spawn_client().await;
     let added = tool_json(

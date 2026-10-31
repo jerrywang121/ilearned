@@ -13,17 +13,8 @@ pub struct AddCommand {
 impl AddCommand {
     pub fn validate(&self) -> Result<(), AppError> {
         validate_topic(&self.topic)?;
-        if self.when_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("when is required".to_string()));
-        }
-        if self.if_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("if is required".to_string()));
-        }
         if self.do_text.trim().is_empty() {
             return Err(AppError::InvalidInput("do is required".to_string()));
-        }
-        if self.check_text.trim().is_empty() {
-            return Err(AppError::InvalidInput("check is required".to_string()));
         }
         Ok(())
     }
@@ -41,19 +32,11 @@ pub struct UpdateCommand {
 
 impl UpdateCommand {
     pub fn has_updates(&self) -> bool {
-        self.when_text
-            .as_deref()
-            .is_some_and(|s| !s.trim().is_empty())
-            || self
-                .if_text
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty())
+        self.when_text.is_some()
+            || self.if_text.is_some()
+            || self.check_text.is_some()
             || self
                 .do_text
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty())
-            || self
-                .check_text
                 .as_deref()
                 .is_some_and(|s| !s.trim().is_empty())
     }

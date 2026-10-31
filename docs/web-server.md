@@ -28,10 +28,10 @@ REST, web, and HTTP MCP do not expose configuration controls.
   | --- | --- | --- |
   | `GET` | `/` | Search/browse; query `q,topic,deep,limit,offset` |
   | `GET` | `/experiences/new` | Add form |
-  | `POST` | `/experiences` | Add submit; form fields `topic,when_text,if_text,do_text,check` (all required, blanks → 400) |
+  | `POST` | `/experiences` | Add submit; `topic` and non-blank `do_text` required; `when_text`, `if_text`, `check` optional |
   | `GET` | `/experiences/:topic/:id` | Detail via `MemoryService::get` (sole entry; deleted/missing → 404) |
   | `GET` | `/experiences/:topic/:id/edit` | Edit form |
-  | `POST` | `/experiences/:topic/:id` | Edit submit; non-blank subset of `when_text/if_text/do_text/check`; empty → 400 |
+  | `POST` | `/experiences/:topic/:id` | Edit submit; empty `when_text`, `if_text`, or `check` clears it; blank `do_text` ignored; no effective fields → 400 |
   | `POST` | `/experiences/:topic/:id/promote` | Feedback (`good_count+1`, restores to active), redirects to `/` preserving the request query |
   | `POST` | `/experiences/:topic/:id/demote` | Feedback (`bad_count+1`, restores to active; auto-deletes below `auto_delete_threshold`), redirects to `/` preserving the request query |
   | `POST` | `/experiences/:topic/:id/delete` | Requires `confirm=yes` field, else 400; redirects to `/` |
@@ -54,7 +54,8 @@ REST, web, and HTTP MCP do not expose configuration controls.
   `limit` and returns to the first page.
 - The add form matches the edit form's wide layout and full-width multiline
   textareas for `when`, `if`, `do`, and `check`; `topic` remains a single-line
-  input.
+  input. Only topic and `do` are required. Clearing an optional textarea on the
+  edit form removes that field's value; omitted fields leave it unchanged.
 
 - Since topics may contain `/`, links and redirects percent-encode the topic as
   one path segment (for example, `jump/down/up` becomes
