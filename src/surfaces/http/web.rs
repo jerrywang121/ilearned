@@ -71,10 +71,10 @@ struct BaseTemplate {
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned</title>
+<html><head><meta charset="utf-8"><title>iLearned</title>
 <style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:5%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}.pagination{display:flex;align-items:center;justify-content:center;gap:1em;margin:1em 0}</style>
 </head><body>
-<h1>ilearned</h1>
+<h1>iLearned <small>v{{ version }}</small> · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form id="search" method="get" action="/">
 <input name="q" value="{{ query }}" placeholder="search text">
 <input name="topic" value="{{ topic }}" placeholder="topic">
@@ -112,6 +112,7 @@ struct BaseTemplate {
     ext = "html"
 )]
 struct SearchTemplate {
+    version: &'static str,
     query: String,
     topic: String,
     deep: bool,
@@ -164,10 +165,10 @@ fn truncate_experience_cell(value: &str) -> String {
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · record</title>
+<html><head><meta charset="utf-8"><title>iLearned · record</title>
 <style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}.meta{color:#666}</style>
 </head><body>
-<h1>ilearned</h1>
+<h1>iLearned <small>v{{ version }}</small> · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <h2>{{ e.topic }} / {{ e.id }}</h2>
 <p class="meta">{{ e.state_str() }} · good {{ e.good_count }} · bad {{ e.bad_count }}</p>
 <dl>
@@ -187,16 +188,17 @@ fn truncate_experience_cell(value: &str) -> String {
     ext = "html"
 )]
 struct DetailTemplate {
+    version: &'static str,
     e: Experience,
 }
 
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · add</title>
+<html><head><meta charset="utf-8"><title>iLearned · add</title>
 <style>body{font-family:sans-serif;max-width:96vw;box-sizing:border-box;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}textarea{display:block;width:100%;min-height:8em;box-sizing:border-box}</style>
 </head><body>
-<h1>ilearned · add</h1>
+<h1>iLearned <small>v{{ version }}</small> · add · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form method="post" action="/experiences">
 <label>topic <input name="topic" required></label>
 <label>when <textarea name="when_text" required></textarea></label>
@@ -209,15 +211,17 @@ struct DetailTemplate {
 </body></html>"#,
     ext = "html"
 )]
-struct AddTemplate;
+struct AddTemplate {
+    version: &'static str,
+}
 
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · edit</title>
+<html><head><meta charset="utf-8"><title>iLearned · edit</title>
 <style>body{font-family:sans-serif;max-width:96vw;box-sizing:border-box;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}textarea{display:block;width:100%;min-height:8em;box-sizing:border-box}</style>
 </head><body>
-<h1>ilearned · edit {{ e.topic }}/{{ e.id }}</h1>
+<h1>iLearned <small>v{{ version }}</small> · edit {{ e.topic }}/{{ e.id }} · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form method="post" action="/experiences/{{ e.topic|urlencode_strict }}/{{ e.id }}">
 <label>when <textarea name="when_text">{{ e.when_text }}</textarea></label>
 <label>if <textarea name="if_text">{{ e.if_text }}</textarea></label>
@@ -230,16 +234,17 @@ struct AddTemplate;
     ext = "html"
 )]
 struct EditTemplate {
+    version: &'static str,
     e: Experience,
 }
 
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · clear</title>
+<html><head><meta charset="utf-8"><title>iLearned · clear</title>
 <style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}</style>
 </head><body>
-<h1>ilearned · clear</h1>
+<h1>iLearned <small>v{{ version }}</small> · clear · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form method="post" action="/clear">
 <label>topic <input name="topic"></label>
 <p>or</p>
@@ -251,12 +256,14 @@ struct EditTemplate {
 </body></html>"#,
     ext = "html"
 )]
-struct ClearTemplate;
+struct ClearTemplate {
+    version: &'static str,
+}
 
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · error {{ status }}</title></head><body>
+<html><head><meta charset="utf-8"><title>iLearned · error {{ status }}</title></head><body>
 <h1>error {{ status }}</h1>
 <p>{{ message }}</p>
 <p><a href="/">back</a></p>
@@ -273,10 +280,10 @@ struct ErrorTemplate<'a> {
 #[derive(Template)]
 #[template(
     source = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ilearned · topics</title>
+<html><head><meta charset="utf-8"><title>iLearned · topics</title>
 <style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}li{margin:.6em 0;border-bottom:1px solid #ddd;padding-bottom:.4em}.meta{color:#666;font-size:.9em}</style>
 </head><body>
-<h1>ilearned · topics</h1>
+<h1>iLearned <small>v{{ version }}</small> · topics · <small><a href="https://github.com/jerrywang121/ilearned">GitHub</a></small></h1>
 <form method="get" action="/topics">
 <input name="q" value="{{ q }}" placeholder="search substring or # pattern">
 <input name="level" value="{{ level }}" placeholder="level">
@@ -294,6 +301,7 @@ struct ErrorTemplate<'a> {
     ext = "html"
 )]
 struct TopicsTemplate {
+    version: &'static str,
     q: String,
     level: String,
     deep: bool,
@@ -393,6 +401,7 @@ pub async fn index<R: ExperienceRepo + VectorStore>(
     });
     let results = results.into_iter().map(ExperienceTableRow::from).collect();
     let t = SearchTemplate {
+        version: env!("CARGO_PKG_VERSION"),
         query: p.q.unwrap_or_default(),
         topic: p.topic.unwrap_or_default(),
         deep,
@@ -419,14 +428,27 @@ async fn detail<R: ExperienceRepo + VectorStore + 'static>(
     let e = svc
         .get(&topic, &id)
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Html(DetailTemplate { e }.render().map_err(|e| {
-        let WebErr(b) = tpl_err(e);
-        WebErr(b)
-    })?))
+    Ok(Html(
+        DetailTemplate {
+            version: env!("CARGO_PKG_VERSION"),
+            e,
+        }
+        .render()
+        .map_err(|e| {
+            let WebErr(b) = tpl_err(e);
+            WebErr(b)
+        })?,
+    ))
 }
 
 async fn add_form() -> Html<String> {
-    Html(AddTemplate.render().unwrap())
+    Html(
+        AddTemplate {
+            version: env!("CARGO_PKG_VERSION"),
+        }
+        .render()
+        .unwrap(),
+    )
 }
 
 async fn add_submit<R: ExperienceRepo + VectorStore>(
@@ -452,10 +474,17 @@ async fn edit_form<R: ExperienceRepo + VectorStore + 'static>(
     let e = svc
         .get(&topic, &id)
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
-    Ok(Html(EditTemplate { e }.render().map_err(|e| {
-        let WebErr(b) = tpl_err(e);
-        WebErr(b)
-    })?))
+    Ok(Html(
+        EditTemplate {
+            version: env!("CARGO_PKG_VERSION"),
+            e,
+        }
+        .render()
+        .map_err(|e| {
+            let WebErr(b) = tpl_err(e);
+            WebErr(b)
+        })?,
+    ))
 }
 
 async fn edit_submit<R: ExperienceRepo + VectorStore>(
@@ -527,7 +556,13 @@ async fn delete_action<R: ExperienceRepo + VectorStore>(
 }
 
 async fn clear_page() -> Html<String> {
-    Html(ClearTemplate.render().unwrap())
+    Html(
+        ClearTemplate {
+            version: env!("CARGO_PKG_VERSION"),
+        }
+        .render()
+        .unwrap(),
+    )
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -564,6 +599,7 @@ async fn topics_page<R: ExperienceRepo + VectorStore>(
         })
         .map_err(|e| WebErr(Box::new(svc_err(e))))?;
     let t = TopicsTemplate {
+        version: env!("CARGO_PKG_VERSION"),
         q: p.q.unwrap_or_default(),
         level: p.level.unwrap_or_default(),
         deep: p.deep.unwrap_or(false),

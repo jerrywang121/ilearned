@@ -917,3 +917,53 @@ async fn add_form_uses_wide_multiline_fields() {
     assert!(add.contains("textarea{display:block;width:100%"));
     assert!(add.contains(">Add</button>"));
 }
+
+#[tokio::test]
+async fn pages_show_branded_header_with_version_and_github_link() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let created: serde_json::Value = client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({"topic":"web","when":"w","if":"i","do":"d","check":"c"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let topic = created["topic"].as_str().unwrap();
+    let id = created["id"].as_str().unwrap();
+    let pages = [
+        "/".to_string(),
+        "/experiences/new".to_string(),
+        format!("/experiences/{topic}/{id}"),
+        format!("/experiences/{topic}/{id}/edit"),
+        "/clear".to_string(),
+        "/topics".to_string(),
+    ];
+    let expected_header = format!("<h1>iLearned <small>v{}</small>", env!("CARGO_PKG_VERSION"));
+    let expected_link = r#"<a href="https://github.com/jerrywang121/ilearned">GitHub</a>"#;
+
+    for path in pages {
+        let html = client
+            .get(srv.url(&path))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(
+            html.contains(&expected_header),
+            "{path} should show the iLearned brand and version"
+        );
+        assert!(
+            html.contains(expected_link),
+            "{path} should link to the GitHub repository"
+        );
+    }
+}

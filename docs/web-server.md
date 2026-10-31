@@ -21,6 +21,8 @@ REST, web, and HTTP MCP do not expose configuration controls.
   authentication exists.
 - Web routes (server-rendered HTML via Askama, inline CSS, no JS),
   all calling `MemoryService` directly (never REST internally):
+  Page headers display `iLearned`, the Cargo package version, and a link to the
+  GitHub repository.
 
   | Method | Route | Notes |
   | --- | --- | --- |
