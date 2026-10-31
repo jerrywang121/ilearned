@@ -693,3 +693,40 @@ async fn feedback_actions_return_to_filtered_list_with_updated_counts() {
     assert!(demoted_list.contains("Good count: 2"));
     assert!(demoted_list.contains("Bad count: 1"));
 }
+
+#[tokio::test]
+async fn add_form_uses_wide_multiline_fields() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let add = client
+        .get(srv.url("/experiences/new"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    assert!(add.contains(r#"<form method="post" action="/experiences">"#));
+    assert!(add.contains(r#"<input name="topic" required>"#));
+    for (name, label) in [
+        ("when_text", "when"),
+        ("if_text", "if"),
+        ("do_text", "do"),
+        ("check", "check"),
+    ] {
+        assert!(
+            add.contains(&format!(
+                r#"<label>{} <textarea name="{}" required></textarea></label>"#,
+                label, name
+            )),
+            "{} should be a required multiline field",
+            label
+        );
+    }
+    assert!(add.contains("max-width:96vw"));
+    assert!(add.contains("textarea{display:block;width:100%"));
+    assert!(add.contains(">Add</button>"));
+}

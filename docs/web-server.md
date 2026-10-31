@@ -46,6 +46,9 @@ REST, web, and HTTP MCP do not expose configuration controls.
   `deep` filters, showing the updated counts. Search/topic filters are widened,
   and the table scrolls horizontally on narrow screens. The edit form uses
   full-width multiline textareas for `when`, `if`, `do`, and `check`.
+- The add form matches the edit form's wide layout and full-width multiline
+  textareas for `when`, `if`, `do`, and `check`; `topic` remains a single-line
+  input.
 
 - Since topics may contain `/`, links and redirects percent-encode the topic as
   one path segment (for example, `jump/down/up` becomes

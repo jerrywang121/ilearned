@@ -178,15 +178,15 @@ struct DetailTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned · add</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}</style>
+<style>body{font-family:sans-serif;max-width:96vw;box-sizing:border-box;margin:2em auto;padding:0 1em}label{display:block;margin:.5em 0}textarea{display:block;width:100%;min-height:8em;box-sizing:border-box}</style>
 </head><body>
 <h1>ilearned · add</h1>
 <form method="post" action="/experiences">
 <label>topic <input name="topic" required></label>
-<label>when <input name="when_text" required></label>
-<label>if <input name="if_text" required></label>
-<label>do <input name="do_text" required></label>
-<label>check <input name="check" required></label>
+<label>when <textarea name="when_text" required></textarea></label>
+<label>if <textarea name="if_text" required></textarea></label>
+<label>do <textarea name="do_text" required></textarea></label>
+<label>check <textarea name="check" required></textarea></label>
 <button type="submit">Add</button>
 </form>
 <p><a href="/">back</a></p>
