@@ -71,7 +71,7 @@ struct BaseTemplate {
 #[template(
     source = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ilearned</title>
-<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:8.33%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
+<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}ul{list-style:none;padding:0}.meta{color:#666;font-size:.9em}#search input[name="q"],#search input[name="topic"]{width:40ch;max-width:100%;box-sizing:border-box}.table-wrap{overflow-x:auto}table{width:100%;min-width:50em;border-collapse:collapse;table-layout:fixed}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #ddd;padding:.5em}td{overflow-wrap:anywhere;white-space:pre-wrap}.experience-text{font-size:.85em}.ops{width:5%;white-space:nowrap}.ops-line{display:flex;align-items:center;gap:.3em;min-height:1.6em}.ops-line form{display:inline;margin:0}.ops-line button{padding:0 .2em}.delete-op{color:red}</style>
 </head><body>
 <h1>ilearned</h1>
 <form id="search" method="get" action="/">

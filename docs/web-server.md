@@ -40,7 +40,7 @@ REST, web, and HTTP MCP do not expose configuration controls.
   with `Topic`, `When`, `If`, `Do`, `Check`, and `Ops` columns. Each row offers
   `When`, `If`, `Do`, and `Check` text in a smaller font, capped at 110
   characters plus `…` when longer; full values are preserved. The `Ops` column
-  is half its previous equal-share width and uses three lines: red `✘` delete
+  is 5% of the table width and uses three lines: red `✘` delete
   then `✎` edit; `★` promote with the good count; and `☆` demote with the bad
   count. Feedback actions return to `/` with the current `q`, `topic`, and
   `deep` filters, showing the updated counts. Search/topic filters are widened,

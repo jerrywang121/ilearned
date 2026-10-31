@@ -356,8 +356,8 @@ async fn index_renders_topic_sorted_table_with_operations() {
     assert!(index.contains(".table-wrap{overflow-x:auto}"));
     assert!(index.contains("min-width:50em"));
     assert!(
-        index.contains(".ops{width:8.33%"),
-        "Ops should use half of its original fixed-layout width"
+        index.contains(".ops{width:5%"),
+        "Ops should use 5% of the table width"
     );
     assert!(index.contains(r#"<th class="ops">Ops</th>"#));
 
