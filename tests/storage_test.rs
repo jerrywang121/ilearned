@@ -138,6 +138,19 @@ fn fts_invalid_syntax_is_typed() {
 }
 
 #[test]
+fn fts_unterminated_quote_is_invalid_syntax_for_scoped_and_unscoped_searches() {
+    let (_d, repo) = open_repo();
+    repo.insert(&exp("rust", "a1", 0, State::Active)).unwrap();
+    for topic in [None, Some("rust")] {
+        let result = repo.search_fts("\"unfinished", topic, false);
+        assert!(
+            matches!(result, Err(ilearned::AppError::InvalidFtsSyntax(_))),
+            "{topic:?}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn distinct_topics_respects_visibility() {
     let (_d, repo) = open_repo();
     repo.insert(&exp("b-active", "a1", 0, State::Active))

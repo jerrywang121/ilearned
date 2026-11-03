@@ -1032,3 +1032,359 @@ async fn pages_show_branded_header_with_version_and_github_link() {
         );
     }
 }
+
+#[tokio::test]
+async fn export_all_downloads_active_and_inactive_records_as_jsonl() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for (topic, action) in [("active", "new action"), ("inactive", "old action")] {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic": topic, "do": action}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let conn = rusqlite::Connection::open(srv.db_path()).unwrap();
+    conn.execute(
+        "UPDATE experiences SET updated_at = ?1 WHERE topic = ?2",
+        rusqlite::params![chrono::Utc::now().timestamp() - 61 * 86400, "inactive"],
+    )
+    .unwrap();
+    drop(conn);
+
+    let response = client
+        .get(srv.url("/export?scope=all&topic=active&deep=false"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    assert_eq!(response.headers()["content-type"], "application/x-ndjson");
+    assert!(response.headers()["content-disposition"]
+        .to_str()
+        .unwrap()
+        .contains("attachment"));
+    let body = response.text().await.unwrap();
+    let records: Vec<serde_json::Value> = body
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 2);
+    assert!(records
+        .iter()
+        .any(|e| e["topic"] == "active" && e["do"] == "new action"));
+    assert!(records
+        .iter()
+        .any(|e| e["topic"] == "inactive" && e["state"] == "inactive"));
+    assert!(body.ends_with('\n'));
+}
+
+#[tokio::test]
+async fn export_search_downloads_all_matching_pages_not_other_records() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for ordinal in 0..101 {
+        client.post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic":"search/child", "do": format!("needle result {ordinal}")}))
+            .send().await.unwrap().error_for_status().unwrap();
+    }
+    for (topic, action) in [
+        ("other", "needle result"),
+        ("search/child", "unrelated action"),
+    ] {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic": topic, "do": action}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let response = client
+        .get(srv.url("/export"))
+        .query(&[
+            ("scope", "search"),
+            ("q", "needle"),
+            ("topic", "search/#"),
+            ("deep", "false"),
+            ("limit", "1"),
+            ("offset", "100"),
+        ])
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let body = response.text().await.unwrap();
+    let records: Vec<serde_json::Value> = body
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 101);
+    assert!(records
+        .iter()
+        .all(|e| e["topic"] == "search/child"
+            && e["do"].as_str().unwrap().starts_with("needle result ")));
+}
+
+#[tokio::test]
+async fn browse_page_offers_export_options_with_applied_filters() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    let page = client
+        .get(srv.url("/"))
+        .query(&[
+            ("q", "needle"),
+            ("topic", "search/#"),
+            ("deep", "true"),
+            ("limit", "1"),
+            ("offset", "2"),
+        ])
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains(r#"href="/export?scope=all""#));
+    assert!(page.contains(
+        r#"href="/export?scope=search&amp;q=needle&amp;topic=search%2F%23&amp;deep=true""#
+    ));
+}
+
+#[tokio::test]
+async fn export_search_respects_deep_and_never_exposes_deleted_or_forgotten() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for topic in ["active", "inactive", "forgotten", "deleted"] {
+        client
+            .post(srv.url("/api/v1/experiences"))
+            .json(&serde_json::json!({"topic": topic, "do": "needle action"}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+    }
+    let conn = rusqlite::Connection::open(srv.db_path()).unwrap();
+    let now = chrono::Utc::now().timestamp();
+    conn.execute(
+        "UPDATE experiences SET updated_at = ?1 WHERE topic = 'inactive'",
+        [now - 61 * 86400],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE experiences SET updated_at = ?1 WHERE topic = 'forgotten'",
+        [now - 121 * 86400],
+    )
+    .unwrap();
+    conn.execute("UPDATE experiences SET state = 'deleted', retention_started_at = ?1 WHERE topic = 'deleted'", [now]).unwrap();
+    drop(conn);
+    for (scope, deep, expected) in [
+        ("search", "false", vec!["active"]),
+        ("search", "true", vec!["active", "inactive"]),
+        ("all", "false", vec!["active", "inactive"]),
+    ] {
+        let body = client
+            .get(srv.url("/export"))
+            .query(&[("scope", scope), ("q", "needle"), ("deep", deep)])
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        let mut topics: Vec<String> = body
+            .lines()
+            .map(|line| {
+                serde_json::from_str::<serde_json::Value>(line).unwrap()["topic"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        topics.sort();
+        assert_eq!(topics, expected);
+    }
+}
+
+#[tokio::test]
+async fn export_search_reports_invalid_filters_and_returns_empty_jsonl_for_no_matches() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for params in [
+        vec![("scope", "other")],
+        vec![("scope", "search"), ("topic", "Bad Topic")],
+        vec![("scope", "search"), ("q", "NEAR(broken")],
+    ] {
+        let response = client
+            .get(srv.url("/export"))
+            .query(&params)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        assert!(!response.headers().contains_key("content-disposition"));
+        let body = response.text().await.unwrap();
+        assert_eq!(
+            status,
+            reqwest::StatusCode::BAD_REQUEST,
+            "params {params:?}: {body}"
+        );
+    }
+    let response = client
+        .get(srv.url("/export?scope=search&q=missing"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    assert_eq!(response.text().await.unwrap(), "");
+}
+
+#[tokio::test]
+async fn unterminated_search_quote_returns_bad_request_on_web_and_rest() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    for (path, params) in [
+        ("/", vec![("q", "\"unfinished")]),
+        ("/export", vec![("scope", "search"), ("q", "\"unfinished")]),
+        ("/api/v1/experiences", vec![("text", "\"unfinished")]),
+    ] {
+        let response = client
+            .get(srv.url(path))
+            .query(&params)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        assert!(!response.headers().contains_key("content-disposition"));
+    }
+}
+
+#[tokio::test]
+async fn web_export_can_be_imported_by_the_cli() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({"topic":"portable", "when":"first\nsecond", "do":"Unicode ✓"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let exported = client
+        .get(srv.url("/export?scope=all"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let file = srv.dir.path().join("export.jsonl");
+    let config = srv.dir.path().join("import-config.toml");
+    let imported_db = srv.dir.path().join("imported.db");
+    std::fs::write(&file, exported).unwrap();
+    std::fs::write(
+        &config,
+        format!("db = {:?}\n", imported_db.to_string_lossy()),
+    )
+    .unwrap();
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_ilearned"))
+        .arg("--config-file")
+        .arg(&config)
+        .arg("import")
+        .arg("--file")
+        .arg(&file)
+        .arg("--json")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["new"], 1);
+    assert_eq!(summary["errors"], 0);
+    let conn = rusqlite::Connection::open(imported_db).unwrap();
+    let (when, action): (String, String) = conn
+        .query_row(
+            "SELECT when_text, do_text FROM experiences WHERE topic = 'portable'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(when, "first\nsecond");
+    assert_eq!(action, "Unicode ✓");
+}
+
+#[tokio::test]
+async fn export_search_link_preserves_and_escapes_special_characters() {
+    let srv = spawn_server().await;
+    let client = reqwest::Client::new();
+    client
+        .post(srv.url("/api/v1/experiences"))
+        .json(&serde_json::json!({"topic":"security", "do":"needle & <script>"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let page = client
+        .get(srv.url("/"))
+        .query(&[
+            ("q", "\"needle & <script>\""),
+            ("topic", "security"),
+            ("deep", "false"),
+        ])
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(!page.contains("<script>"));
+    let href = page
+        .split("href=\"/export?scope=search")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let path = format!("/export?scope=search{}", href.replace("&amp;", "&"));
+    let body = client
+        .get(srv.url(&path))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let records: Vec<serde_json::Value> = body
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["do"], "needle & <script>");
+}

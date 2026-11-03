@@ -34,8 +34,9 @@
   `topic, when_text, if_text, do_text, check_text` with after-insert/
   after-delete/after-update sync triggers plus a `rebuild_fts` recovery
   path; BM25 rank; topic filter applied outside the `MATCH` expression;
-  lifecycle eligibility applied after the match. Invalid `MATCH` syntax
-  maps to `AppError::InvalidFtsSyntax` (HTTP 400 / CLI exit 2).
+  lifecycle eligibility applied after the match. Invalid `MATCH` syntax,
+  including an unterminated quoted string, maps to `AppError::InvalidFtsSyntax`
+  (HTTP 400 / CLI exit 2).
 - `embeddings(topic, id, model, dims, vec BLOB LE-f32)` keyed
   `(topic,id,model,dims)` (`vec` is a little-endian f32 blob; `dims` is the
   vector length). The table is created lazily by `ensure_table` on first

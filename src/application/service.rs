@@ -560,6 +560,16 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
 
     pub fn search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
         self.reconcile()?;
+        Ok(self.paginate(self.search_unpaginated(q)?, q))
+    }
+
+    /// Export every result matching a search, ignoring pagination.
+    pub fn export_search(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
+        self.reconcile()?;
+        self.search_unpaginated(q)
+    }
+
+    fn search_unpaginated(&self, q: &SearchQuery) -> Result<Vec<Experience>, AppError> {
         let (sql_topic, wildcard) = Self::resolve_topic_filter(q.topic.as_deref())?;
         let wildcard = wildcard.as_deref();
         let matches_wildcard = |e: &Experience| wildcard.is_none_or(|p| topic_matches(p, &e.topic));
@@ -574,7 +584,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                     .filter(|e| matches_wildcard(e))
                     .filter_map(|e| self.visible(e, q.deep))
                     .collect();
-                Ok(self.paginate(out, q))
+                Ok(out)
             }
             (Some(t), None) => {
                 let out: Vec<Experience> = self
@@ -585,11 +595,11 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                     .filter(|e| matches_wildcard(e))
                     .filter_map(|e| self.visible(e, q.deep))
                     .collect();
-                Ok(self.paginate(out, q))
+                Ok(out)
             }
             (None, Some(s)) => {
                 let out = self.search_semantic(s, q, sql_topic.as_deref(), wildcard)?;
-                Ok(self.paginate(out, q))
+                Ok(out)
             }
             (Some(t), Some(s)) => {
                 // Combined: both rankings must succeed; embed failure is a
@@ -627,7 +637,7 @@ impl<R: ExperienceRepo + VectorStore> MemoryService<R> {
                         .then_with(|| a.0.topic.cmp(&b.0.topic))
                         .then_with(|| a.0.id.cmp(&b.0.id))
                 });
-                Ok(self.paginate(ordered.into_iter().map(|(e, _)| e).collect(), q))
+                Ok(ordered.into_iter().map(|(e, _)| e).collect())
             }
         }
     }
