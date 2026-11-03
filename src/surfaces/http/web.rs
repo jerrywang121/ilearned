@@ -82,7 +82,7 @@ struct BaseTemplate {
 <label><input type="checkbox" name="deep" value="true" {% if deep %}checked{% endif %}> deep</label>
 <button type="submit">Search</button>
 </form>
-<p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a></p>
+<p class="meta">{{ results.len() }} result(s) <a href="/experiences/new">add</a> · <a href="/topics">topics</a> · <a href="/clear">clear</a> · <a href="/export?scope=all">export all</a> · <a href="/export?scope=search&amp;q={{ query|urlencode_strict }}&amp;topic={{ topic|urlencode_strict }}&amp;deep={{ deep }}">export search results</a></p>
 <div class="table-wrap"><table>
 <thead><tr><th>Topic</th><th>When</th><th>If</th><th>Do</th><th>Check</th><th class="ops">Ops</th></tr></thead>
 <tbody>
@@ -634,9 +634,54 @@ async fn clear_submit<R: ExperienceRepo + VectorStore>(
     Ok(Redirect::to("/"))
 }
 
+async fn export_download<R: ExperienceRepo + VectorStore>(
+    State(svc): State<Shared<R>>,
+    Query(p): Query<ExportParams>,
+) -> Result<impl IntoResponse, WebErr> {
+    let records = match p.scope.as_str() {
+        "all" => svc.export(None, true),
+        "search" => svc.export_search(&SearchQuery {
+            topic: p.topic.filter(|s| !s.trim().is_empty()),
+            text: p.q.filter(|s| !s.trim().is_empty()),
+            semantic: None,
+            deep: p.deep.unwrap_or(false),
+            limit: 0,
+            offset: 0,
+        }),
+        _ => Err(AppError::InvalidInput("invalid export scope".to_string())),
+    }
+    .map_err(|e| WebErr(Box::new(svc_err(e))))?;
+    let mut body = String::new();
+    for record in records {
+        let line = serde_json::to_string(&record)
+            .map_err(|e| WebErr(Box::new(svc_err(AppError::Internal(e.to_string())))))?;
+        body.push_str(&line);
+        body.push('\n');
+    }
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "application/x-ndjson"),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=\"ilearned.jsonl\"",
+            ),
+        ],
+        body,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportParams {
+    scope: String,
+    q: Option<String>,
+    topic: Option<String>,
+    deep: Option<bool>,
+}
+
 pub fn web_routes<R: ExperienceRepo + VectorStore + 'static>() -> Router<Shared<R>> {
     Router::new()
         .route("/", get(index::<R>))
+        .route("/export", get(export_download::<R>))
         .route("/experiences/new", get(add_form))
         .route("/experiences", post(add_submit::<R>))
         .route("/experiences/:topic/:id", get(detail::<R>))

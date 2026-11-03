@@ -27,6 +27,7 @@ REST, web, and HTTP MCP do not expose configuration controls.
   | Method | Route | Notes |
   | --- | --- | --- |
   | `GET` | `/` | Search/browse; query `q,topic,deep,limit,offset` |
+  | `GET` | `/export` | JSONL download; `scope=all` or `scope=search` with `q,topic,deep` |
   | `GET` | `/experiences/new` | Add form |
   | `POST` | `/experiences` | Add submit; `topic` and non-blank `do_text` required; `when_text`, `if_text`, `check` optional |
   | `GET` | `/experiences/:topic/:id` | Detail via `MemoryService::get` (sole entry; deleted/missing → 404) |
@@ -52,6 +53,13 @@ REST, web, and HTTP MCP do not expose configuration controls.
   with a page indicator. Navigation preserves `q`, `topic`, `deep`, and `limit`
   while advancing or rewinding `offset`; submitting new filters preserves
   `limit` and returns to the first page.
+- The browse page offers **export all** and **export search results**. Export all
+  ignores the current filters and includes active and inactive experiences.
+  Export search results uses the applied text, topic (including wildcards), and
+  deep filters and includes matching experiences from every page. Both exclude
+  deleted and forgotten experiences and download CLI-compatible JSONL that can
+  be restored with `ilearned import --file PATH`. Downloads are plaintext even
+  when the database is encrypted; keep them secure.
 - The add form matches the edit form's wide layout and full-width multiline
   textareas for `when`, `if`, `do`, and `check`; `topic` remains a single-line
   input. Only topic and `do` are required. Clearing an optional textarea on the

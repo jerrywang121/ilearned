@@ -103,5 +103,8 @@ pub type Db = std::sync::Arc<std::sync::Mutex<Connection>>;
 
 pub fn is_fts_syntax_error(e: &rusqlite::Error) -> bool {
     let m = e.to_string().to_lowercase();
-    m.contains("syntax error") || m.contains("fts5") || m.contains("malformed")
+    m.contains("syntax error")
+        || m.contains("fts5")
+        || m.contains("malformed")
+        || m == "unterminated string"
 }
