@@ -8,273 +8,129 @@
 
 ## What it is
 
-Agents learn by doing. `ilearned` stores those lessons and facts as **experiences** grouped by topic, with an action or fact (`do`) and optional context (`when`, `if`, `check`), that the agent can search, apply, and continuously refine.
-
-Each experience records:
-
-| Field | Meaning |
-| --- | --- |
-| `topic` / `id` | Compound key; `id` is an 8-char unique id within the topic |
-| `when` | Optional scenario, context, conditions, and constraints. |
-| `if` | Optional triggers or observations. |
-| `do` | Required non-blank action, instruction, or fact to remember. |
-| `check` | Optional signals to verify the experience or outcome. |
-| `updated_at` | Creation / last-update timestamp (RFC 3339 on the wire) |
-| `good_count` / `bad_count` | Positive / negative feedback tallies (`add` sets `1` / `0`) |
-| `state` | `active` (default on `add`) / `inactive` / `deleted` / `forgotten` (internal maintenance) |
-
-All behavior lives in one application service (`MemoryService`); CLI, REST, web, and MCP surfaces are thin adapters over it.
+`ilearned` stores lessons and facts as searchable **experiences** grouped by
+topic. Each experience has a required action or fact (`do`) and optional context
+(`when`, `if`, `check`). Agents can retrieve, apply, and refine those rules.
 
 ## Features
 
-- **One binary, five surfaces** — CLI subcommands plus `serve` mode hosting REST + server-rendered web UI + MCP (streamable HTTP) on a single listener (default `127.0.0.1:8787`), plus `mcp` mode serving the same tools over stdio for harness use. (Surfaces: CLI · REST · Web · HTTP MCP · stdio MCP.)
-- **Full-text + semantic search** — SQLite FTS5/BM25 always works; optional OpenAI-compatible embeddings add cosine search; combined queries fuse both with RRF (`k=60`, tie-break `updated_at DESC, topic ASC, id ASC`).
-- **Lifecycle management** — `active` → `inactive` after 60d untouched → `forgotten` after 120d untouched, with configurable retention (default 60d) before physical purge. Search hides `deleted`/`forgotten` always, `inactive` unless `deep=true`; explicit detail reads still reach `inactive`/`forgotten` (`deleted`/missing → `NotFound`).
-- **Feedback loop** — `promote`/`demote` bump `good_count`/`bad_count`; `update`/`promote`/`demote` refresh `updated_at`, clear retention metadata, and restore `inactive`/`forgotten` records to active life. A `demote` that drops the feedback score `good_count / (good_count + bad_count)` strictly below `auto_delete_threshold` (default `0.3`) marks the record `deleted` (retention clock starts; purge applies).
-- **Local-first** — single-user, SQLite (WAL) backend, optional SQLCipher encryption at rest, no auth, no JS build.
+- **One binary, five surfaces:** CLI, REST, web UI, HTTP MCP, and stdio MCP.
+- **Searchable rules:** keyword search works without a provider; optional
+  embeddings add semantic search.
+- **Lifecycle and feedback:** experiences age into inactive and forgotten states;
+  promote and demote record outcomes. Demoting can automatically delete a rule.
+- **Portable data:** import and export experiences as JSONL.
+- **Local-first security:** databases are plaintext by default; optional SQLCipher
+  encryption uses the environment-only `ILEARNED_DB_KEY`. Existing plaintext databases
+  require explicit, confirmation-gated conversion. **JSONL exports remain plaintext**
+  and need separate protection.
 
 ## Installation
 
-### npm
-
 ```bash
 npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned
-# or run without installing
-npx @jerrywang121/ilearned --help
 ```
 
-### Script
-
-Linux and macOS
-
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jerrywang121/ilearned/releases/download/v0.1.0/ilearned-installer.sh | sh
-```
-
-Windows
-
-```Powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/jerrywang121/ilearned/releases/download/v0.1.0/ilearned-installer.ps1 | iex"
-```
-
-### Build from source
-
-Requirements: Rust toolchain (1.98+) and a C toolchain. SQLite/SQLCipher and vendored OpenSSL build from source through rusqlite; no system OpenSSL headers are needed.
-
-```bash
-git clone https://github.com/jerrywang121/ilearned
-cd ilearned
-cargo build --release
-./target/release/ilearned --help
-```
+See [installation options](docs/installation.md) for running with `npx`, platform
+installers, or building from source.
 
 ## Quickstart
 
+In a new workspace, initialize a local configuration and database path:
+
 ```bash
-# Add an experience
+ilearned config init
 ilearned add --topic "travel/hotel/booking" --when "family trip" --if "child age < 1y old" \
   --do "request baby cot" --check "hotel website states baby cot available"
-
-# A fact only needs a topic and do
-ilearned add --topic fact --do "remember Bob likes Blues"
-
-# Search it (human output by default, --json for agents/scripts)
 ilearned search --topic "travel/#" --text child --json
-
-# Positive feedback
-ilearned promote --topic "travel/hotel/booking" --id <id>
-
-# Serve REST + web + MCP on one port
-ilearned serve
 ```
+
+`config init` does not overwrite an existing configuration. To reuse an existing
+database or configure a global one, see [CLI configuration](docs/cli.md).
+Run `ilearned serve` for the web UI, REST API, and HTTP MCP on
+`127.0.0.1:8787`, or `ilearned mcp` for stdio MCP. The server has no
+authentication; do not expose it to untrusted networks.
 
 ## Agent Skill
 
-`ilearned` is the enabler, an agent SKILL completes the self-improving cycle. 
+`ilearned` provides persistent memory; an agent skill defines when to learn,
+which lessons to apply, and how to verify and refine them.
 
-An effective agent SKILL needs to be domain specific, and tuned towards your use cases and scenario.
+### Self-improving OpenClaw, LobeHub, and Hermes assistant
 
-Here is an example for [ilearned-travel-agent](./example/skills/ilearned-travel-agent/SKILL.md) SKILL, which was generated by AI with below prompt:
+The [ilearned-self-improving-agent skill](./example/skills/ilearned-self-improving-agent/SKILL.md)
+turns user corrections, tool failures, knowledge gaps, and verified better
+approaches into structured rules for daily planning, research, communication,
+and tool use. It searches and revalidates lessons before reuse, avoids duplicate
+or speculative learning, and ties feedback to actual outcomes rather than reads
+or successful memory writes.
 
-```
-https://github.com/jerrywang121/ilearned
-i will use the above mcp tool for travel agent ai harness.
-Create SKILL for using it, defines set of topics, and rules
-for add/refine/promote/demote/delete experiences, in order
-to continue improve ai agent performance over time
-```
+The bundled [setup and operations guide](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md)
+covers installing ilearned, choosing private storage, connecting OpenClaw MCP,
+mcporter, LobeHub Desktop, or Hermes, and verifying tools from the active agent. It also explains
+lifecycle-managed memory, provider-free keyword search, JSONL import/export,
+and optional database encryption—including the plaintext-export warning.
 
-## Usage
-
-### CLI
-
-```text
-ilearned [--config-file PATH] <command>
-
-ilearned add --topic TOPIC --do TEXT [--when TEXT] [--if TEXT] [--check TEXT] [--json]
-ilearned search [--topic TOPIC] [--text MATCH] [--semantic QUERY]
-                  [--limit N] [--offset N] [--deep] [--json]
-ilearned topic list [--level N] [--limit N] [--offset N] [--deep] [--json]
-ilearned topic search QUERY [--level N] [--limit N] [--offset N] [--deep] [--json]
-ilearned update --topic TOPIC --id ID [--when TEXT] [--if TEXT]
-                  [--do TEXT] [--check TEXT] [--json]
-ilearned delete --topic TOPIC --id ID [--yes] [--json]
-ilearned promote --topic TOPIC --id ID [--json]
-ilearned demote --topic TOPIC --id ID [--json]
-ilearned clear (--topic TOPIC | --all) [--yes] [--json]
-ilearned export [--topic TOPIC] [--deep] [--file PATH]
-ilearned import [--file PATH] [--merge] [--json]
-ilearned db encrypt [--yes] [--json]
-ilearned config show
-ilearned config init [-g] [--force | -f]
-ilearned serve [--bind ADDR]
-ilearned mcp
-```
-
-- Destructive `delete`/`clear` require `--yes` or an interactive `y/N` prompt (refusal aborts, exit 2). `clear` needs exactly one of `--topic` / `--all`. `delete` on a never-existing `(topic, id)` is not-found (exit 1); deleting an already-deleted record is idempotent success.
-- `config show` prints the resolved configuration as JSON, including the existing global/local/explicit config file paths used for resolution; embedding API keys are omitted and represented by `api_key_configured`. It does not require a database. `config init` generates a default `config.toml` in `./.ilearned/`; use `config init -g` for the global config path. Initialization refuses to overwrite an existing file unless `--force` (or `-f`) is supplied.
-- Database encryption is controlled only by the optional `ILEARNED_DB_KEY` environment variable (default: unset, plaintext mode). The key is held for the process, is never persisted in TOML, shown by `config show`, emitted in output/errors, or accepted as a CLI argument. Commands that resolve or use the database key reject empty and non-UTF-8 values (exit 2); `config show` intentionally bypasses database-key resolution. A keyed startup uses SQLCipher; a wrong key or a key on an existing plaintext database fails as a database error (exit 4) and points to `ilearned db encrypt` rather than converting automatically.
-- `ilearned db encrypt [--yes] [--json]` explicitly converts the resolved existing plaintext database using `ILEARNED_DB_KEY`. It requires confirmation (`--yes` or interactive `y/N`); refusal or other pre-checkpoint rejection leaves the source unchanged. A database file that is a symbolic link or has multiple hard links is rejected. Later failures preserve logical contents when rollback succeeds; if Windows filesystem errors also prevent rollback, the error identifies the possible plaintext backup path for manual recovery. JSON success is `{"encrypted":{"path":"..."}}`; human output is concise. The conversion verifies the encrypted result, removes stale plaintext `-wal`/`-shm` sidecars, then uses `fs::rename` on Unix and other non-Windows targets or a staged replacement with a rollback attempt on Windows.
-- Distributed binaries include bundled SQLCipher/OpenSSL components; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-- Mutation output is intentionally compact in JSON mode: `add` returns `{"added":{"topic":"...","id":"..."}}`; `update` returns `{"modified":{"topic":"...","id":"..."}}`; `delete` returns `{"deleted":{"topic":"...","id":"..."}}`; `promote` and `demote` return `{"modified":{"topic":"...","id":"...","good_count":N,"bad_count":M,"state":"..."}}` (`state` is `"deleted"` when a demote crossed the auto-delete threshold); and `clear` returns `{"cleared":{"num_of_topics":N,"num_of_items":M}}`, where `num_of_topics` counts unique topics. Human output adds a short action label (demote appends `[auto-deleted]` when the record was auto-deleted). `config init` prints only the generated file path.
-- Topics are hierarchical (`travel/hotel/checkout`, segments `[a-z0-9_-]`); `search`/`export --topic` accept `#` multi-level wildcards (`travel/#`, `#/checkout`), bare `travel` matches exact only; `clear --topic` stays exact. `topic list` / `topic search QUERY` list existing topics (`--level N` truncates depth after matching, `--limit/--offset/--deep` paginate; `topic search` is a case-insensitive substring unless the query contains `#`, then it is a `#` pattern; `--level 0` rejected).
-- `add` requires a valid topic and non-blank `--do`; omitted or blank `--when`, `--if`, and `--check` are stored as empty strings. `update` leaves omitted fields unchanged; an empty or whitespace-only optional field clears it (for example `--when ""`). Blank `--do` is ignored, and an update with no effective fields is rejected.
-- Portable backup: `ilearned export [--topic T] [--deep] [--file PATH]` always dumps JSONL to stdout or a file; `ilearned import [--file PATH] [--merge]` loads it back (`--merge` keeps ids and overwrites on collision, otherwise fresh ids; bad lines counted, good lines kept). Full reference: [docs/cli.md](docs/cli.md).
-- Exit codes: `0` ok · `1` not-found · `2` invalid input · `3` embedding unavailable · `4` internal.
-
-Full reference: [docs/cli.md](docs/cli.md).
-
-### REST API
-
-| Method | Route | Notes |
-| --- | --- | --- |
-| `GET` | `/healthz` | Readiness probe → `{"ok":true}` |
-| `GET` / `POST` | `/api/v1/experiences` | Search/browse · add (201) |
-| `PATCH` / `DELETE` | `/api/v1/experiences/:topic/:id` | Update · delete (204; never-existing id → 404, already-deleted → idempotent 204) |
-| `POST` | `/api/v1/experiences/:topic/:id/promote` | `good_count + 1` |
-| `POST` | `/api/v1/experiences/:topic/:id/demote` | `bad_count + 1` |
-| `DELETE` | `/api/v1/experiences?topic=X&confirm=true` | Clear topic/all (exactly one of `topic` / `all=true`) |
-| `GET` | `/api/v1/topics` | List/search distinct topics (`level,q,limit,offset,deep`) |
-
-Errors are `{"error": "..."}` with `400` validation · `404` missing · `503` embedding-unavailable · `500` internal. Pagination defaults `limit=20 offset=0`, clamped to `MAX_LIMIT=100`.
-
-Full reference: [docs/rest-api.md](docs/rest-api.md).
-
-### Web UI
-
-Server-rendered HTML, no JavaScript: search/browse at `/`, topic list/search at `/topics`, record detail, add/edit forms, promote/demote/delete actions, and a clear flow. Destructive posts require `confirm=yes`; all output is HTML-escaped. See [docs/web-server.md](docs/web-server.md).
-
-### MCP
-
-Streamable HTTP at `/mcp` with nine tools mirroring the domain commands exactly: `search`, `add`, `update`, `delete`, `promote`, `demote`, `clear` (requires `confirm=true`), `topics_list`, `topics_search`. Typed errors map to MCP errors (`invalid → invalid params`, `not-found → not found`, embedding failures → internal with message). See [docs/mcp.md](docs/mcp.md).
-
-For harness use (e.g. opencode), `ilearned mcp` serves the same tools over stdio (stdin/stdout). When no database is configured, it uses an existing project-local `./.ilearned/ilearned.db`, then an existing XDG data database (`$XDG_DATA_HOME/ilearned/ilearned.db`, or `~/.local/share/ilearned/ilearned.db`). If neither exists, startup reports that the database path is not configured:
-
-```json
-{ "mcp": { "ilearned": { "type": "local",
-  "command": ["ilearned", "mcp"],
-  "enabled": true } } }
-```
-
-## Configuration
-
-Precedence: **`serve --bind` > `ILEARNED_*` env > `--config-file` overlay > local file > global file > defaults.**
-
-Configuration is CLI-selected but CLI-only: `--config-file PATH` overlays the
-default global and local TOML files for that invocation. The selected file must
-exist. Configuration is consumed by every CLI invocation, including commands
-that select a database or use lifecycle/embedding settings; REST, web, and
-MCP protocols do not expose configuration controls or settings.
-
-Config files are TOML, all keys optional: global
-`~/.config/ilearned/config.toml` (`$XDG_CONFIG_HOME` respected), overlaid
-per-field by local `./.ilearned/config.toml`, then by the explicit
-`--config-file` layer (see [docs/cli.md](docs/cli.md) for the schema).
-
-| Setting | TOML key | Env | Default |
-| --- | --- | --- | --- |
-| Database path | `db` | `ILEARNED_DB` | Existing `./.ilearned/ilearned.db`, then existing `$XDG_DATA_HOME/ilearned/ilearned.db` (or `~/.local/share/ilearned/ilearned.db`); otherwise an error |
-| Database encryption key | — | `ILEARNED_DB_KEY` | unset (plaintext mode) |
-| Bind address | `bind` | `ILEARNED_BIND` | `127.0.0.1:8787` |
-| Active period (days) | `active_days` | `ILEARNED_ACTIVE_DAYS` | `60` |
-| Forget period (days) | `forget_days` | `ILEARNED_FORGET_DAYS` | `120` |
-| Retention (days) | `retention_days` | `ILEARNED_RETENTION_DAYS` | `60` |
-| Demote auto-delete threshold | `auto_delete_threshold` | — (TOML only) | `0.3` |
-| Embedding endpoint/model/key | `[embedding] endpoint/model/api_key` | `ILEARNED_EMBED_*` | unset (semantic search returns typed error) |
-| Embedding dims/timeout | `[embedding] dims/timeout_secs` | `ILEARNED_EMBED_*` | `1536` / `30s` (returned dimensions are validated and part of vector identity) |
-| Search cap | — (code constant `MAX_LIMIT`) | — | `100` (larger `limit` clamps, no error) |
-
-`MAX_LIMIT` is a compile-time constant in `application::service`; there is
-no flag/env knob — a deliberate follow-up (see Roadmap). Semantic search
-stores one vector per experience per embedding identity (`model` plus
-dimension); `embeddings` is keyed `(topic,id,model,dims)`. Search loads only
-the exact configured model and returned dimension, so vectors from another
-model or dimension are ignored rather than compared with a truncated cosine
-calculation.
-
-When `ILEARNED_DB_KEY` is set, the shared SQLite opener applies SQLCipher's key
-before schema access and enables `cipher_memory_security`, using SQLCipher's
-default version-4 settings. Existing plaintext databases are not converted on
-startup: use the confirmation-gated `db encrypt` command above. JSONL exports
-remain plaintext portable backups and are not encrypted by this feature.
-
-When the configured model or dimension changes, run
-`ilearned embedding migrate [--prune] [--yes] [--json]`. The command requires
-an embedding provider, reconciles lifecycle state, and re-embeds every
-non-deleted experience, including inactive and forgotten records. Deleted
-records are excluded. New vectors are staged under the target identity and
-old vectors are retained by default. A provider, dimension, or storage
-failure stops the run without pruning; successfully staged vectors remain and
-rerunning is safe. `--prune` removes non-target vector identities only after
-the complete migration succeeds and requires the usual confirmation (or
-`--yes`).
-
-Embedding failure on `add`/`update` never rolls back the canonical write; a semantic query without a provider fails typed (exit 3 / HTTP 503) instead of silently degrading to text-only. `add` retries once on id collision (8-char uuid prefix); unknown `state` values in SQLite surface as storage errors instead of defaulting.
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────────┐
-│ Adapters: CLI · REST · Web · HTTP MCP · stdio MCP│
-└────────────────────────┬─────────────────────────┘
-                         ▼
-┌──────────────────────────────────────────────────┐
-│ Application service (MemoryService)              │
-└──────┬──────────────────────────────┬────────────┘
-       ▼                              ▼
-┌──────────────────┐        ┌──────────────────────┐
-│ Domain           │        │ Ports                │
-│ Experience       │◄───────│ ExperienceRepo       │
-│ State, rules     │◄───────│ EmbeddingProvider    │
-└──────────────────┘        └──────────┬───────────┘
-                                       ▼
-                            ┌──────────────────────┐
-                            │ SQLite + optional    │
-                            │ OpenAI-compatible    │
-                            │ embeddings HTTP API  │
-                            └──────────────────────┘
-```
-
-Details: [docs/architecture.md](docs/architecture.md) · [docs/storage.md](docs/storage.md) · [design spec](docs/superpowers/specs/2026-09-27-initial-architecture-design.md).
-
-## Development
+Install with [Vercel's skills CLI](https://skills.sh/) for OpenClaw:
 
 ```bash
-cargo fmt --check
-cargo check
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
+npx skills add jerrywang121/ilearned --skill ilearned-self-improving-agent --agent openclaw
 ```
 
-All four must pass before committing. See [docs/development.md](docs/development.md). Behavior changes require updating the matching `docs/*.md` and tests (see [AGENTS.md](AGENTS.md)).
+Run the command from the OpenClaw workspace (or add `--global` for a shared
+installation). It uses the repository's default branch, so it becomes available
+there after these changes are merged and pushed. The repository also contains a
+travel example; `--skill` selects only the self-improving skill.
 
-## Roadmap
+Alternatively, for a local OpenClaw installation, copy the **whole skill directory**, including
+`references/`, into the active OpenClaw workspace's `skills/` directory:
 
-Tracked as follow-ups in [docs/TODO.md](docs/TODO.md):
+```bash
+cp -R example/skills/ilearned-self-improving-agent /path/to/openclaw-workspace/skills/
+```
 
-- Documented maximum search limit tuning (`MAX_LIMIT`)
-- Portable JSONL `export`/`import` round-trip (done; file-copy backup
-  out of scope)
+For **LobeHub**, open the agent's **Skills → Add Skill…**, choose **Add → Import
+from GitHub**, and enter the directory URL once the branch is available:
+
+```text
+https://github.com/jerrywang121/ilearned/tree/main/example/skills/ilearned-self-improving-agent
+```
+
+Review that `SKILL.md` and `references/setup-and-operations.md` were imported,
+then attach the skill to the agent. Use the actual branch name in the URL if the
+changes are on a different public branch. Alternatively, upload a ZIP containing
+the skill directory and its references. LobeHub marketplace publication is a
+separate creator submission; import does not publish it.
+
+For **Hermes Agent**, install from GitHub once the skill directory is available
+on the repository's default branch:
+
+```bash
+hermes skills install jerrywang121/ilearned/example/skills/ilearned-self-improving-agent
+```
+
+Review the security scan and confirm the bundled reference is present. Follow its
+[Hermes MCP setup](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md#hermes-agent)
+to connect `ilearned mcp` and verify live tools in a new Hermes session.
+
+If distributed through ClawHub, install the published skill package with its
+bundled reference. Installing a skill alone does not install the executable or
+configure MCP. Ask the assistant: **“Set up ilearned using this skill, verify the memory
+tools, and use it for reusable lessons from my daily tasks.”** Setup changes need
+permission; the skill does not automatically rewrite agent instructions or
+share personal memories.
+
+Inspired by [Self-Improving Agent](https://clawhub.ai/pskoett/skills/self-improving-agent),
+but uses ilearned's searchable rule book instead of Markdown learning logs.
+For a domain-specific example, see [ilearned-travel-agent](./example/skills/ilearned-travel-agent/SKILL.md).
+
+## Documentation
+
+- [CLI, configuration, import/export, and encryption](docs/cli.md)
+- [REST API](docs/rest-api.md) · [Web UI](docs/web-server.md) · [MCP](docs/mcp.md)
+- [Architecture](docs/architecture.md) · [Storage and lifecycle](docs/storage.md)
+- [Development and verification](docs/development.md) · [Roadmap](docs/TODO.md)
+- [Third-party notices](THIRD-PARTY-NOTICES.md)
 
 ## License
 
