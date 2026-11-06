@@ -1,4 +1,4 @@
-# OpenClaw setup and ilearned operations
+# OpenClaw / LobeHub setup and ilearned operations
 
 This reference ships with the skill; no checkout of the ilearned repository is
 required. Read the relevant section before setup, feedback, data transfer, or
@@ -8,10 +8,15 @@ the user; never overwrite existing configuration or weaken sandbox policy.
 ## 1. Inspect before changing anything
 
 Check the installed versions and help, existing ilearned configuration, and the
-MCP route available in this OpenClaw workspace:
+MCP route available to the active agent. On the machine running the MCP server:
 
 ```bash
 command -v ilearned
+```
+
+For OpenClaw, also check the client tools used by the workspace:
+
+```bash
 command -v openclaw
 command -v mcporter
 ```
@@ -42,18 +47,19 @@ package's instructions; do not bypass installation security policy. Without npm,
 use the official [ilearned releases](https://github.com/jerrywang121/ilearned/releases)
 for the platform, or [source installation](https://github.com/jerrywang121/ilearned#installation).
 Do not guess asset URLs or execute an unreviewed installer. Resolve an absolute
-executable path; an interactive shell's PATH may differ from OpenClaw's.
+executable path; an interactive shell's PATH may differ from the agent's.
 
 ## 3. Select a database
 
 For a **fresh personal installation** on Linux/macOS, this example sets an
-explicit private database location. Substitute the real OpenClaw workspace:
+explicit private database location. Substitute an approved absolute workspace path;
+OpenClaw uses it as the MCP working directory:
 
 ```bash
 umask 077
 ILEARNED_BIN="$(command -v ilearned)"
-ILEARNED_WORKSPACE="/absolute/path/to/openclaw/workspace"
-ILEARNED_DB_PATH="${XDG_DATA_HOME:-$HOME/.local/share}/ilearned/openclaw.db"
+ILEARNED_WORKSPACE="/absolute/path/to/agent/workspace"
+ILEARNED_DB_PATH="${XDG_DATA_HOME:-$HOME/.local/share}/ilearned/assistant.db"
 mkdir -p "$(dirname "$ILEARNED_DB_PATH")"
 export ILEARNED_DB="$ILEARNED_DB_PATH"
 ilearned topic list --json
@@ -73,9 +79,9 @@ working-directory ambiguity even when configuration files are used.
 **If encryption is requested, provision the key as described below before the
 first database-opening command.** Opening a new database without a key creates
 plaintext. Windows: adapt shell/environment syntax to PowerShell, resolve the
-launcher with `Get-Command ilearned`, and verify OpenClaw can execute that launcher.
+launcher with `Get-Command ilearned`, and verify the agent can execute that launcher.
 
-## 4. Connect the MCP client used by this workspace
+## 4. Connect the MCP client used by the active agent
 
 ### Native OpenClaw registry
 
@@ -128,14 +134,52 @@ mcporter call ilearned.search \
   --args '{"topic":"self-improvement/#","text":"timezone","limit":5}' --output json
 ```
 
+### LobeHub Desktop
+
+In **Settings → Connectors**, add a custom **STDIO** MCP server. LobeHub runs
+stdio servers on the desktop device, not as an arbitrary process in a browser.
+Enter the absolute ilearned executable, argument `mcp`, and the approved absolute
+database path as `ILEARNED_DB`. Alternatively, import this JSON after replacing
+the example paths:
+
+```json
+{
+  "mcpServers": {
+    "ilearned": {
+      "type": "stdio",
+      "command": "/absolute/path/to/ilearned",
+      "args": ["mcp"],
+      "env": {"ILEARNED_DB": "/absolute/path/to/private/ilearned.db"}
+    }
+  }
+}
+```
+
+Add only this server; preserve existing connectors. If an `ilearned` connector
+already exists, inspect it and ask before changing it. In **Agent Settings →
+Connectors**, enable it for the intended agent, choose appropriate tool permissions,
+and save. Use **Ask** for `delete`, `clear`, and `demote` (which can auto-delete);
+explicit human approval is still required even if a tool is allowed. Check the
+conversation's tool-call results.
+
+For encrypted storage, the MCP child must receive the key securely. Current
+LobeHub Desktop stdio launches filter inherited environment variables: setting
+`ILEARNED_DB_KEY` on the desktop process alone does not pass it to the child. Do
+not put the key in connector JSON or UI fields. If a verified secure provisioning
+method for the child is unavailable, stop and report the blocker; do not silently
+switch to plaintext. The plaintext connector example above works without a key.
+Browser/cloud deployments cannot assume access to the user's local stdio process;
+use a supported connected desktop or an approved secure remote setup. Do not expose
+ilearned's unauthenticated HTTP listener to the public internet.
+
 ### Verify the active agent, not just the registry
 
-Both transports must expose the same nine tools: `search`, `add`, `update`,
+All transports must expose the same nine tools: `search`, `add`, `update`,
 `delete`, `promote`, `demote`, `clear`, `topics_list`, `topics_search`. There is no
 MCP `get`, `import`, `export`, or encryption tool. `ilearned mcp` uses stdio, with
 protocol-only stdout and logs on stderr; no separate `serve` process is needed.
 
-Through the **active OpenClaw agent's actual tool route**, call `topics_list` with
+Through the **active agent's actual tool route**, call `topics_list` with
 `{"limit":5}` and `search` with
 `{"topic":"self-improvement/#","text":"timezone","limit":5}`. Empty results
 are valid. Check schemas and successful responses, not merely tool names.
@@ -213,9 +257,10 @@ them or share another user's information.
   Have the user provision it through their secure launcher/service environment;
   never request the value in chat or include it in TOML, MCP JSON `env`, command
   arguments, example assignments, skills, logs, or output. Do not echo environment
-  variables or enable shell tracing. MCP children must inherit that secure
-  environment; an interactive shell's key is not automatically in a running
-  OpenClaw service. Never disable sandbox isolation to pass a key.
+  variables or enable shell tracing. MCP children must receive the key in their
+  own secure environment; an interactive shell's key is not automatically in a
+  running OpenClaw service. LobeHub Desktop filters stdio child environments as
+  described above. Never disable sandbox isolation to pass a key.
 - Set the key before opening a new database to create encrypted storage. Setting
   a key does **not** convert an existing plaintext database. A wrong key or keyed
   open of plaintext fails; do not unset the key and silently continue plaintext.
@@ -244,6 +289,7 @@ them or share another user's information.
 - [ilearned CLI/configuration](https://github.com/jerrywang121/ilearned/blob/main/docs/cli.md)
 - [OpenClaw MCP](https://docs.openclaw.ai/cli/mcp)
 - [mcporter configuration](https://github.com/openclaw/mcporter/blob/main/docs/config.md)
+- [LobeHub MCP connectors](https://github.com/lobehub/lobehub/blob/canary/docs/usage/community/mcp-market.mdx)
 - [Self-Improving Agent inspiration](https://clawhub.ai/pskoett/skills/self-improving-agent)
 
 The inspiration's correction/failure/revalidation pattern is adapted to ilearned's

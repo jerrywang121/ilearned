@@ -95,7 +95,7 @@ ilearned serve
 `ilearned` provides persistent memory; an agent skill defines when to learn,
 which lessons to apply, and how to verify and refine them.
 
-### Self-improving OpenClaw assistant
+### Self-improving OpenClaw and LobeHub assistant
 
 The [ilearned-self-improving-agent skill](./example/skills/ilearned-self-improving-agent/SKILL.md)
 turns user corrections, tool failures, knowledge gaps, and verified better
@@ -105,21 +105,45 @@ or speculative learning, and ties feedback to actual outcomes rather than reads
 or successful memory writes.
 
 The bundled [setup and operations guide](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md)
-covers installing ilearned, choosing private storage, connecting native OpenClaw
-MCP or mcporter, and verifying tools from the active agent. It also explains
+covers installing ilearned, choosing private storage, connecting OpenClaw MCP,
+mcporter, or LobeHub Desktop, and verifying tools from the active agent. It also explains
 lifecycle-managed memory, provider-free keyword search, JSONL import/export,
 and optional database encryption—including the plaintext-export warning.
 
-For a local installation, copy the **whole skill directory**, including
+Install with [Vercel's skills CLI](https://skills.sh/) for OpenClaw:
+
+```bash
+npx skills add jerrywang121/ilearned --skill ilearned-self-improving-agent --agent openclaw
+```
+
+Run the command from the OpenClaw workspace (or add `--global` for a shared
+installation). It uses the repository's default branch, so it becomes available
+there after these changes are merged and pushed. The repository also contains a
+travel example; `--skill` selects only the self-improving skill.
+
+Alternatively, for a local OpenClaw installation, copy the **whole skill directory**, including
 `references/`, into the active OpenClaw workspace's `skills/` directory:
 
 ```bash
 cp -R example/skills/ilearned-self-improving-agent /path/to/openclaw-workspace/skills/
 ```
 
+For **LobeHub**, open the agent's **Skills → Add Skill…**, choose **Add → Import
+from GitHub**, and enter the directory URL once the branch is available:
+
+```text
+https://github.com/jerrywang121/ilearned/tree/main/example/skills/ilearned-self-improving-agent
+```
+
+Review that `SKILL.md` and `references/setup-and-operations.md` were imported,
+then attach the skill to the agent. Use the actual branch name in the URL if the
+changes are on a different public branch. Alternatively, upload a ZIP containing
+the skill directory and its references. LobeHub marketplace publication is a
+separate creator submission; import does not publish it.
+
 If distributed through ClawHub, install the published skill package with its
 bundled reference. Installing a skill alone does not install the executable or
-configure MCP. Ask OpenClaw: **“Set up ilearned using this skill, verify the memory
+configure MCP. Ask the assistant: **“Set up ilearned using this skill, verify the memory
 tools, and use it for reusable lessons from my daily tasks.”** Setup changes need
 permission; the skill does not automatically rewrite agent instructions or
 share personal memories.
