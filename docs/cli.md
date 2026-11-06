@@ -197,7 +197,7 @@ ilearned mcp
   (logs/errors go to stderr). It follows the database resolution rules above:
   configured paths win, otherwise existing local/global fallback files are
   used, and startup fails if no database can be resolved. See
-  [docs/mcp.md](docs/mcp.md).
+  [MCP guide](mcp.md).
 - `delete` on a never-existing `(topic, id)` exits 1 (not-found);
   deleting an already-deleted record is idempotent and succeeds.
 - `topic list` prints existing topics (one per line; JSON: array of strings),
