@@ -23,3 +23,7 @@ hosting = "github"
 publish-jobs = ["npm"]
 # Whether to install an updater program
 install-updater = false
+
+# macOS 14 runners were retired; keep Apple Silicon builds on a supported image.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"

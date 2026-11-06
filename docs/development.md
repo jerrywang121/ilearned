@@ -49,6 +49,14 @@ with plain JSON-RPC lines).
 Do not publish a release or push its tag without explicit author approval. A
 push of a version tag starts the GitHub Actions release workflow.
 
+The cargo-dist release matrix uses `macos-15` for Apple Silicon; macOS 14
+GitHub-hosted runners were retired. With cargo-dist 0.32.0 installed as `dist`,
+check that both macOS release targets use supported native runners with:
+
+```bash
+python3 tests/test_release_runners.py
+```
+
 1. Update the package version in `Cargo.toml` and run `cargo check` to refresh
    the matching `ilearned` entry in `Cargo.lock`.
 2. Run all four verification commands above before committing.
