@@ -56,7 +56,7 @@ authentication; do not expose it to untrusted networks.
 `ilearned` provides persistent memory; an agent skill defines when to learn,
 which lessons to apply, and how to verify and refine them.
 
-### Self-improving OpenClaw and LobeHub assistant
+### Self-improving OpenClaw, LobeHub, and Hermes assistant
 
 The [ilearned-self-improving-agent skill](./example/skills/ilearned-self-improving-agent/SKILL.md)
 turns user corrections, tool failures, knowledge gaps, and verified better
@@ -67,7 +67,7 @@ or successful memory writes.
 
 The bundled [setup and operations guide](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md)
 covers installing ilearned, choosing private storage, connecting OpenClaw MCP,
-mcporter, or LobeHub Desktop, and verifying tools from the active agent. It also explains
+mcporter, LobeHub Desktop, or Hermes, and verifying tools from the active agent. It also explains
 lifecycle-managed memory, provider-free keyword search, JSONL import/export,
 and optional database encryption—including the plaintext-export warning.
 
@@ -101,6 +101,17 @@ then attach the skill to the agent. Use the actual branch name in the URL if the
 changes are on a different public branch. Alternatively, upload a ZIP containing
 the skill directory and its references. LobeHub marketplace publication is a
 separate creator submission; import does not publish it.
+
+For **Hermes Agent**, install from GitHub once the skill directory is available
+on the repository's default branch:
+
+```bash
+hermes skills install jerrywang121/ilearned/example/skills/ilearned-self-improving-agent
+```
+
+Review the security scan and confirm the bundled reference is present. Follow its
+[Hermes MCP setup](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md#hermes-agent)
+to connect `ilearned mcp` and verify live tools in a new Hermes session.
 
 If distributed through ClawHub, install the published skill package with its
 bundled reference. Installing a skill alone does not install the executable or

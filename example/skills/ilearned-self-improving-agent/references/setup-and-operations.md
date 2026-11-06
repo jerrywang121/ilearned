@@ -1,4 +1,4 @@
-# OpenClaw / LobeHub setup and ilearned operations
+# OpenClaw / LobeHub / Hermes setup and ilearned operations
 
 This reference ships with the skill; no checkout of the ilearned repository is
 required. Read the relevant section before setup, feedback, data transfer, or
@@ -20,6 +20,8 @@ For OpenClaw, also check the client tools used by the workspace:
 command -v openclaw
 command -v mcporter
 ```
+
+For Hermes, check `command -v hermes` and `hermes skills --help` instead.
 
 Missing commands are expected on a fresh installation. Do not require those
 binaries in skill-discovery metadata: the skill must be loadable to bootstrap
@@ -52,8 +54,8 @@ executable path; an interactive shell's PATH may differ from the agent's.
 ## 3. Select a database
 
 For a **fresh personal installation** on Linux/macOS, this example sets an
-explicit private database location. Substitute an approved absolute workspace path;
-OpenClaw uses it as the MCP working directory:
+explicit private database location. Substitute an approved absolute workspace path
+for clients that accept an MCP working directory:
 
 ```bash
 umask 077
@@ -172,6 +174,54 @@ Browser/cloud deployments cannot assume access to the user's local stdio process
 use a supported connected desktop or an approved secure remote setup. Do not expose
 ilearned's unauthenticated HTTP listener to the public internet.
 
+### Hermes Agent
+
+Hermes accepts this `SKILL.md` and its referenced support files; a separate
+skill-folder README is not required. If the skill is not installed yet, use
+`hermes skills install jerrywang121/ilearned/example/skills/ilearned-self-improving-agent`
+once that directory is on the public repository's default branch. Review the
+security scan; do not bypass a blocked installation. Installing the skill does
+not install ilearned or register MCP.
+
+For native stdio MCP, merge just this entry into `mcp_servers` in
+`~/.hermes/config.yaml` (or the active profile's configuration), replacing paths
+with the approved absolute executable, workspace, and database paths:
+
+```yaml
+mcp_servers:
+  ilearned:
+    command: "/absolute/path/to/ilearned"
+    args: ["mcp"]
+    cwd: "/absolute/path/to/agent/workspace"
+    env:
+      ILEARNED_DB: "/absolute/path/to/private/ilearned.db"
+```
+
+This is a plaintext/no-key example, not permission to replace the entire file.
+Preserve existing servers and settings; inspect an existing `ilearned` entry and
+ask before modifying it. Start a new session with `hermes chat` after updating
+configuration, or use the installed runtime's supported MCP reload mechanism.
+Discover the actual tool names and schemas, then perform the read-only checks
+below through that Hermes session; saved YAML alone is not proof of readiness.
+
+**Encryption:** Hermes filters stdio child environments, so setting
+`ILEARNED_DB_KEY` only on its parent does not automatically pass the key to
+ilearned. Current Hermes supports environment-variable references: after securely
+provisioning the variable in the approved Hermes runtime/secret scope, add only
+this reference under the server's `env` mapping:
+
+```yaml
+ILEARNED_DB_KEY: "${env:ILEARNED_DB_KEY}"
+```
+
+This is a reference, not a literal key; never replace it with the secret or print
+resolved configuration/environment values. Verify the installed Hermes version
+supports this forwarding and that the intended variable is actually provisioned
+before opening the database. An unresolved reference is not proof that a key was
+passed. If secure provisioning or forwarding cannot be verified, stop and report
+the blocker; never fall back to plaintext. Existing plaintext conversion still
+requires separate approval and the safeguards in section 7.
+
 ### Verify the active agent, not just the registry
 
 All transports must expose the same nine tools: `search`, `add`, `update`,
@@ -255,12 +305,14 @@ them or share another user's information.
   tool outputs, exports, logs, or data while the assistant is using it.
 - The **only** key source is the environment of the process opening the database.
   Have the user provision it through their secure launcher/service environment;
-  never request the value in chat or include it in TOML, MCP JSON `env`, command
-  arguments, example assignments, skills, logs, or output. Do not echo environment
+  never request the value in chat or include key material in TOML, MCP YAML/JSON
+  `env`, command arguments, example assignments, skills, logs, or output. Do not echo environment
   variables or enable shell tracing. MCP children must receive the key in their
   own secure environment; an interactive shell's key is not automatically in a
-  running OpenClaw service. LobeHub Desktop filters stdio child environments as
-  described above. Never disable sandbox isolation to pass a key.
+  running OpenClaw service. LobeHub Desktop and Hermes filter stdio child
+  environments as described above; Hermes's variable reference forwards a securely
+  provisioned secret without storing its value in YAML. Never disable sandbox
+  isolation to pass a key.
 - Set the key before opening a new database to create encrypted storage. Setting
   a key does **not** convert an existing plaintext database. A wrong key or keyed
   open of plaintext fails; do not unset the key and silently continue plaintext.
@@ -290,6 +342,8 @@ them or share another user's information.
 - [OpenClaw MCP](https://docs.openclaw.ai/cli/mcp)
 - [mcporter configuration](https://github.com/openclaw/mcporter/blob/main/docs/config.md)
 - [LobeHub MCP connectors](https://github.com/lobehub/lobehub/blob/canary/docs/usage/community/mcp-market.mdx)
+- [Hermes skills](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills)
+- [Hermes MCP configuration](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference)
 - [Self-Improving Agent inspiration](https://clawhub.ai/pskoett/skills/self-improving-agent)
 
 The inspiration's correction/failure/revalidation pattern is adapted to ilearned's

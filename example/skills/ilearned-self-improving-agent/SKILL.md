@@ -1,6 +1,7 @@
 ---
 name: ilearned-self-improving-agent
-description: Use when an OpenClaw or LobeHub assistant encounters user corrections, failed commands or tools, outdated knowledge, missing capabilities, recurring mistakes, or a better approach, and before tasks where past lessons may matter.
+description: Use when an OpenClaw, LobeHub, or Hermes assistant encounters user corrections, failed commands or tools, outdated knowledge, missing capabilities, recurring mistakes, or a better approach, and before tasks where past lessons may matter.
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://github.com/jerrywang121/ilearned"}}
 ---
 
 # ilearned Self-Improving Agent
