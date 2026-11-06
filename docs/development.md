@@ -43,3 +43,23 @@ with plain JSON-RPC lines).
   SQLCipher and OpenSSL notices aligned with the bundled versions in `Cargo.lock`.
 - Askama templates are inline in `src/surfaces/http/web.rs`; there is no
   `templates/` directory to keep in sync.
+
+## Release
+
+Do not publish a release or push its tag without explicit author approval. A
+push of a version tag starts the GitHub Actions release workflow.
+
+1. Update the package version in `Cargo.toml` and run `cargo check` to refresh
+   the matching `ilearned` entry in `Cargo.lock`.
+2. Run all four verification commands above before committing.
+3. Commit and push the version bump, then push the matching version tag:
+
+   ```bash
+   # Replace 0.2.5 with the version being released.
+   git add Cargo.toml Cargo.lock
+   git commit -m "chore: release 0.2.5"
+   git push
+
+   git tag v0.2.5
+   git push origin v0.2.5
+   ```
