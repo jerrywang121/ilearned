@@ -5,6 +5,8 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.32.0"
+# Keep intentional release-workflow customizations instead of regenerating CI.
+allow-dirty = ["ci"]
 # Include the bundled native-dependency notices in release archives/installers.
 include = ["THIRD-PARTY-NOTICES.md"]
 # CI backends to support
