@@ -54,22 +54,20 @@ initialization, migrations, and all surface adapters.
   `serve` path are concrete over `SqliteRepo`).
 - Web templates are inline Askama `#[template(source = ...)]` (no
   `templates/` directory); auto-escaping is on.
-- `main.rs` builds the service from `Config` (the CLI-selected config-file
-  overlay, default config files, and environment) and attaches an
-  OpenAI-compatible embedding provider when endpoint + model + API key are all
-  configured; otherwise semantic search returns `EmbeddingUnavailable` on
-  every surface. The only remaining runtime CLI override is `serve --bind`,
-  which takes precedence over config files and environment. REST, web, and
-  MCP are adapters over the resulting service and do not expose configuration
-  controls.
+- `main.rs` builds the service from resolved `Config`; source precedence and
+  path selection are documented in the [configuration guide](config.md). It
+  attaches the optional embedding provider when configured; otherwise semantic
+  search returns `EmbeddingUnavailable` on every surface. `serve --bind` is
+  the only runtime CLI value override. REST, web, and MCP are adapters over the
+  resulting service and do not expose configuration controls.
 
 ## Key invariants
 
 - One binary: CLI subcommands + `serve` mode; REST + web + MCP share one
   listener (default `127.0.0.1:8787`); `ilearned mcp` serves the same MCP
-  tools over stdio. Database resolution uses configured paths first, then an
-  existing project-local `./.ilearned/ilearned.db`, then an existing XDG data
-  database; startup fails when none is configured or present.
+  tools over stdio. Database path selection follows the
+  [configuration guide](config.md); startup fails when no configured database
+  or existing fallback is available.
 - Single-user local-first; no authentication.
 - `add` requires a valid topic and non-blank `do`; optional `when`, `if`, and
   `check` are stored as empty strings when omitted or blank. On `update`, an

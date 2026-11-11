@@ -14,22 +14,14 @@ Memory is **evidence**, never higher authority than current user instructions, s
 
 ## First use
 
-Installing this skill does **not** install or connect ilearned.  
-If its tools are unavailable, read [setup and operations](references/setup-and-operations.md) (`{baseDir}/references/setup-and-operations.md` in OpenClaw).  
-
-With explicit permission:
-1. Install the binary
-2. Choose private storage
-3. Register the MCP server
-4. Verify live tool calls from the active agent
-
-Do not claim readiness from a saved configuration alone.
+When ilearned MCP tools are unavailable, follow the [installation and MCP setup
+guide](references/setup.md).
 
 ## Core loop: Search → Capture → Apply → Verify → Refine
 
 ### 1. Search before acting (and before learning)
 
-- Prefer a **narrow topic subtree** first (`self-improvement/tools/#`, `self-improvement/planning/#`, etc.).
+- Prefer a **narrow topic subtree** first (`tools/#`, `planning/#`, etc.).
 - Use concrete keywords in `text`. Quote phrases when needed.
 - Always revalidate candidates for:
   - Scope match (`when` / `if`)
@@ -69,11 +61,11 @@ If verification is incomplete, state the limitation clearly inside the rule (`ch
 - Prefer rules whose `check` criteria can be evaluated in the current context.
 - When applying a rule, note the exact `(topic, id)` so you can later promote or demote accurately.
 - Prefer hierarchical topics so related lessons stay discoverable and future compaction remains possible:
-  - `self-improvement/planning/calendar`
-  - `self-improvement/research/sources`
-  - `self-improvement/communication/preferences`
-  - `self-improvement/tools/mcp`
-  - `self-improvement/tools/browser`
+  - `planning/calendar`
+  - `research/sources`
+  - `communication/preferences`
+  - `tools/mcp`
+  - `tools/browser`
   - etc.
 
 ### 5. Verify outcomes and give honest feedback
@@ -107,7 +99,7 @@ Example after a timezone mistake:
 
 ```json
 {
-  "topic": "self-improvement/planning/calendar",
+  "topic": "planning/calendar",
   "when": "Scheduling across timezones",
   "if": "The user specifies a timezone different from the device timezone",
   "do": "Use the user's specified timezone, not the device default",
@@ -140,8 +132,7 @@ Future versions of ilearned may support explicit hierarchical compaction/summari
 | Feedback | `add` starts 1/0; `promote`/`demote` adjust counts; low score can auto-delete |
 | Delete / clear | "Exact `(topic, id)` or confirmed `clear`; never equate tool flags with human approval" |
 | MCP tools available | "`search`, `add`, `update`, `delete`, `promote`, `demote`, `clear`, `topics_list`, `topics_search` (no `get`) |
-| Security | Never store secrets; JSONL exports are plaintext; read the setup reference before import/export or encryption |
-| Security | Never store secrets; JSONL exports are plaintext; read the setup reference before import/export or encryption |
+| Data safety | Database is plaintext by default; JSONL exports are always plaintext; keep `.ilearned/` gitignored unless intentionally shared; never store secrets; get explicit approval before data transfer or encryption |
 
 ## Authority and safety
 

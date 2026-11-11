@@ -4,8 +4,6 @@
 
 ```bash
 npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned
-# Or run without installing globally:
-npx @jerrywang121/ilearned --help
 ```
 
 ## Platform installers
@@ -40,5 +38,6 @@ cargo build --release
 
 Distributed binaries include bundled SQLCipher/OpenSSL components; see
 [third-party notices](../THIRD-PARTY-NOTICES.md). After installation, follow the
-[quickstart](../README.md#quickstart) and consult the [CLI guide](cli.md) for
-configuration and database options.
+[quickstart](../README.md#quickstart), use the [configuration guide](config.md)
+for settings and database paths, and consult the [CLI guide](cli.md) for
+commands.

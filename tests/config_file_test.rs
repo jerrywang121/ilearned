@@ -784,6 +784,75 @@ fn config_init_generates_local_defaults_without_packaged_files() {
 }
 
 #[test]
+fn config_init_creates_gitignore_for_local_state() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let ignore = std::fs::read_to_string(dir.path().join(".ilearned/.gitignore"))
+        .expect("local ignore file should be created");
+    assert_eq!(ignore, "*\n");
+}
+
+#[test]
+fn config_init_leaves_existing_local_gitignore_unchanged() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let local_dir = dir.path().join(".ilearned");
+    std::fs::create_dir_all(&local_dir).unwrap();
+    let ignore_path = local_dir.join(".gitignore");
+    let existing = "# workspace-specific rules\n*.keep\n";
+    std::fs::write(&ignore_path, existing).unwrap();
+
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(ignore_path).unwrap(), existing);
+}
+
+#[test]
+fn config_init_global_does_not_create_local_ilearned_directory() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let out = isolated_command(dir.path())
+        .env("XDG_DATA_HOME", dir.path().join("xdg-data"))
+        .args(["config", "init", "-g"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!dir.path().join(".ilearned").exists());
+}
+
+#[test]
+fn config_init_refusal_does_not_create_local_gitignore() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let local_dir = dir.path().join(".ilearned");
+    std::fs::create_dir_all(&local_dir).unwrap();
+    std::fs::write(local_dir.join("config.toml"), "db = \"keep-me.db\"\n").unwrap();
+
+    let out = isolated_command(dir.path())
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(!local_dir.join(".gitignore").exists());
+}
+
+#[test]
 fn config_init_global_uses_xdg_config_path() {
     let dir = tempfile::TempDir::new().unwrap();
     let global = dir.path().join("empty-xdg-config/ilearned/config.toml");

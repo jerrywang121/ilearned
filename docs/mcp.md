@@ -9,26 +9,18 @@
     (e.g. opencode). Handshake is plain JSON-RPC lines: `initialize` →
     `notifications/initialized` → `tools/*`. Stdout stays pure JSON-RPC
     (all logs/errors go to stderr). No `--bind`, no session headers.
-- Database: configured `db` values from `ILEARNED_DB` or the merged
-  selected/default config files take precedence. When no database is
-  configured, `ilearned mcp` uses an existing `./.ilearned/ilearned.db` under
-  the harness's working directory, then an existing
-  `$XDG_DATA_HOME/ilearned/ilearned.db` (or
-  `~/.local/share/ilearned/ilearned.db`). If neither exists, startup fails
-  with `db path is not configured`; no fallback file is created. Configuration
-  selection is CLI-only; the HTTP and stdio MCP protocols expose no
-  configuration controls.
-  Add `.ilearned/` to `.gitignore` unless the memory should be shared.
+- Configuration and database selection follow ilearned's normal resolution
+  rules; see the [configuration guide](config.md). For stdio, the process
+  working directory and environment determine which local config and relative
+  database path it uses. The MCP protocols expose no configuration controls.
 - Harness config (opencode example):
   ```json
   { "mcp": { "ilearned": { "type": "local",
     "command": ["ilearned", "mcp"],
     "enabled": true } } }
   ```
-  Run with the project dir as cwd when an existing local store should be used,
-  or pass
-  `--config-file <path>` (with `db = "..."`) / `ILEARNED_DB` for an explicit
-  location.
+  Run with the project directory as CWD when using workspace-local storage.
+  See the [configuration guide](config.md) for other database locations.
 - Tools (9): `search`, `add`, `update`, `delete`, `promote`, `demote`,
   `clear`, `topics_list`, `topics_search`. Argument schemas mirror the domain commands exactly:
   `search{topic?,text?,semantic?,limit?,offset?,deep?}`,

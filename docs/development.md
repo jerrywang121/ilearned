@@ -33,9 +33,10 @@ with plain JSON-RPC lines).
 - HTTPS stack is rustls (`reqwest` with `default-features = false`). The
   vendored OpenSSL used by bundled SQLCipher is a build dependency, not the
   HTTPS runtime stack.
-- Database encryption uses the shared key-aware opener. Keep `ILEARNED_DB_KEY`
-  out of command arguments, test output, logs, fixtures, and generated TOML;
-  use per-process environment injection in tests. No-key tests must continue
+- Database encryption uses the shared key-aware opener; see the
+  [configuration guide](config.md) for key handling. Keep `ILEARNED_DB_KEY` out
+  of command arguments, test output, logs, fixtures, and generated TOML; use
+  per-process environment injection in tests. No-key tests must continue
   to exercise plaintext compatibility, while migration tests cover
   `sqlcipher_export`, integrity verification, Unix `fs::rename`, Windows staged
   replacement, injected rollback failures, and stale `-wal`/`-shm` cleanup.

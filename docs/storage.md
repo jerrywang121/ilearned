@@ -1,24 +1,21 @@
 # Storage
 
 - The bundled rusqlite build includes SQLCipher and vendored OpenSSL. The
-  shared opener accepts the optional `ILEARNED_DB_KEY`: when unset, databases
-  remain plaintext SQLite for compatibility; when set, it applies the key
-  before any schema access and enables `PRAGMA cipher_memory_security = ON`.
-  SQLCipher's default version-4 settings are used. The key is environment-only
-  and is never persisted, logged, returned, or accepted as a CLI argument.
-- Commands that resolve or use a present-but-empty or non-UTF-8
-  `ILEARNED_DB_KEY` reject it as invalid input (CLI exit 2); `config show`
-  intentionally bypasses database-key resolution. A wrong key, or a key used
-  against an existing plaintext database, is a database-key startup error (CLI
-  exit 4) and does not trigger automatic conversion. The error points users to
-  `ilearned db encrypt` without exposing key material.
-- SQLite at a configured path, or (when no path is configured) an existing
-  `./.ilearned/ilearned.db` followed by an existing XDG data database
-  (`$XDG_DATA_HOME/ilearned/ilearned.db`, or
-  `~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
-  exists. Explicitly configured paths may be created by `open_db`, which also
-   enables WAL, sets `busy_timeout=5000`, and records
-   `schema_migrations(version=1)`; the compound primary key is `(topic, id)`.
+  shared opener accepts the optional environment-only `ILEARNED_DB_KEY` (see
+  [configuration](config.md) for its source and handling). When unset,
+  databases remain plaintext SQLite for compatibility; when set, the key is
+  applied before any schema access and enables
+  `PRAGMA cipher_memory_security = ON`. SQLCipher's default version-4 settings
+  are used.
+- A present-but-empty or non-UTF-8 key is invalid; a wrong key, or a key used
+  against an existing plaintext database, is a database-key startup error and
+  does not trigger automatic conversion. See the [CLI guide](cli.md) for
+  explicit conversion.
+- Database path selection and fallback rules are documented in the
+  [configuration guide](config.md). `open_db` creates missing parent
+  directories for configured paths, enables WAL, sets `busy_timeout=5000`,
+  and records `schema_migrations(version=1)`; the compound primary key is
+  `(topic, id)`.
 - Each `SqliteRepo` holds a shared advisory lock on a stable sibling lock file
   for its connection lifetime. `db encrypt` acquires that lock exclusively
   before opening/checkpointing the source and holds it through export,
