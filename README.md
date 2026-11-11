@@ -31,7 +31,7 @@ topic. Each experience has a required action or fact (`do`) and optional context
 npm install -g --allow-scripts=@jerrywang121/ilearned @jerrywang121/ilearned
 ```
 
-See [installation options](docs/installation.md) for running with `npx`, platform
+See [installation options](docs/installation.md) for running with platform
 installers, or building from source.
 
 ## Quickstart
@@ -45,8 +45,8 @@ ilearned add --topic "travel/hotel/booking" --when "family trip" --if "child age
 ilearned search --topic "travel/#" --text child --json
 ```
 
-`config init` does not overwrite an existing configuration. To reuse an existing
-database or configure a global one, see [CLI configuration](docs/cli.md).
+For initialization, existing configs, global storage, path resolution, and
+overrides, see the [configuration guide](docs/config.md).
 Run `ilearned serve` for the web UI, REST API, and HTTP MCP on
 `127.0.0.1:8787`, or `ilearned mcp` for stdio MCP. The server has no
 authentication; do not expose it to untrusted networks.
@@ -65,11 +65,10 @@ and tool use. It searches and revalidates lessons before reuse, avoids duplicate
 or speculative learning, and ties feedback to actual outcomes rather than reads
 or successful memory writes.
 
-The bundled [setup and operations guide](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md)
-covers installing ilearned, choosing private storage, connecting OpenClaw MCP,
-mcporter, LobeHub Desktop, or Hermes, and verifying tools from the active agent. It also explains
-lifecycle-managed memory, provider-free keyword search, JSONL import/export,
-and optional database encryption—including the plaintext-export warning.
+The skill links to a separate [first-use installation and MCP setup
+guide](./example/skills/ilearned-self-improving-agent/references/setup.md).
+For advanced configuration, check [Configuration](docs/config.md) and
+[MCP](docs/mcp.md)
 
 Install with [Vercel's skills CLI](https://skills.sh/) for OpenClaw:
 
@@ -82,8 +81,8 @@ installation). It uses the repository's default branch, so it becomes available
 there after these changes are merged and pushed. The repository also contains a
 travel example; `--skill` selects only the self-improving skill.
 
-Alternatively, for a local OpenClaw installation, copy the **whole skill directory**, including
-`references/`, into the active OpenClaw workspace's `skills/` directory:
+Alternatively, for a local OpenClaw installation, copy the skill directory into
+the active OpenClaw workspace's `skills/` directory:
 
 ```bash
 cp -R example/skills/ilearned-self-improving-agent /path/to/openclaw-workspace/skills/
@@ -96,12 +95,6 @@ from GitHub**, and enter the directory URL once the branch is available:
 https://github.com/jerrywang121/ilearned/tree/main/example/skills/ilearned-self-improving-agent
 ```
 
-Review that `SKILL.md` and `references/setup-and-operations.md` were imported,
-then attach the skill to the agent. Use the actual branch name in the URL if the
-changes are on a different public branch. Alternatively, upload a ZIP containing
-the skill directory and its references. LobeHub marketplace publication is a
-separate creator submission; import does not publish it.
-
 For **Hermes Agent**, install from GitHub once the skill directory is available
 on the repository's default branch:
 
@@ -109,24 +102,24 @@ on the repository's default branch:
 hermes skills install jerrywang121/ilearned/example/skills/ilearned-self-improving-agent
 ```
 
-Review the security scan and confirm the bundled reference is present. Follow its
-[Hermes MCP setup](./example/skills/ilearned-self-improving-agent/references/setup-and-operations.md#hermes-agent)
-to connect `ilearned mcp` and verify live tools in a new Hermes session.
+Review the security scan. The installation and MCP setup guide is included in
+the skill package; configure ilearned as a stdio MCP server in Hermes and verify
+live tools in a new session.
 
-If distributed through ClawHub, install the published skill package with its
-bundled reference. Installing a skill alone does not install the executable or
-configure MCP. Ask the assistant: **“Set up ilearned using this skill, verify the memory
-tools, and use it for reusable lessons from my daily tasks.”** Setup changes need
-permission; the skill does not automatically rewrite agent instructions or
-share personal memories.
+If distributed through ClawHub, install the published skill package.
 
-Inspired by [Self-Improving Agent](https://clawhub.ai/pskoett/skills/self-improving-agent),
-but uses ilearned's searchable rule book instead of Markdown learning logs.
-For a domain-specific example, see [ilearned-travel-agent](./example/skills/ilearned-travel-agent/SKILL.md).
+Installing a skill alone does not install the executable or configure MCP.
+Ask the assistant:
+**“Set up ilearned using this skill, verify the memory tools, and use it for
+reusable lessons from my daily tasks.”**
+Setup changes need permission; the skill does not automatically rewrite agent
+instructions or share personal memories.
+
+For a domain-specific example SKILL, see [ilearned-travel-agent](./example/skills/ilearned-travel-agent/SKILL.md).
 
 ## Documentation
 
-- [CLI, configuration, import/export, and encryption](docs/cli.md)
+- [Configuration](docs/config.md) · [CLI, import/export, and encryption](docs/cli.md)
 - [REST API](docs/rest-api.md) · [Web UI](docs/web-server.md) · [MCP](docs/mcp.md)
 - [Architecture](docs/architecture.md) · [Storage and lifecycle](docs/storage.md)
 - [Development and verification](docs/development.md) · [Roadmap](docs/TODO.md)

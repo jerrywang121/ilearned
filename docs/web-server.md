@@ -1,22 +1,15 @@
 # Web server
 
 `ilearned serve [--bind ADDR]` starts REST, web, and MCP on one listener
-(default `127.0.0.1:8787`; subcommand `--bind` wins over every config-file
-and `ILEARNED_BIND` value). Database comes from the selected/default TOML
-files or `ILEARNED_DB`; when unset, an existing `./.ilearned/ilearned.db` is
-preferred, followed by an existing XDG data database
-(`$XDG_DATA_HOME/ilearned/ilearned.db`, or
-`~/.local/share/ilearned/ilearned.db`). Startup errors if neither fallback
-exists. The `--config-file` selector and all other configuration are CLI-only;
-REST, web, and HTTP MCP do not expose configuration controls.
+(default `127.0.0.1:8787`; subcommand `--bind` wins over configuration and
+`ILEARNED_BIND`). See the [configuration guide](config.md) for config sources,
+database selection, and settings. The `--config-file` selector and all other
+configuration are CLI-only; REST, web, and HTTP MCP do not expose configuration
+controls.
 
-- Lifecycle periods default to active 60d / forget 120d / retention 60d and
-  are tunable via `active_days` / `forget_days` / `retention_days` in TOML or
-  `ILEARNED_ACTIVE_DAYS` / `ILEARNED_FORGET_DAYS` /
-  `ILEARNED_RETENTION_DAYS`. When embedding TOML/env values (`endpoint`,
-  `model`, and `api_key`, plus optional `dims` / `timeout_secs`) are all
-  present, `serve` builds an OpenAI-compatible provider so semantic queries
-  work; otherwise they return 503 / exit 3.
+- Lifecycle and optional embedding settings are described in the
+  [configuration guide](config.md). Without a configured embedding provider,
+  semantic queries return 503 / exit 3.
 - A non-loopback bind is an explicit deployment choice and does not imply
   authentication exists.
 - Web routes (server-rendered HTML via Askama, inline CSS, no JS),

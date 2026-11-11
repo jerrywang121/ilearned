@@ -26,6 +26,63 @@ fn open_repo() -> (tempfile::TempDir, SqliteRepo) {
 }
 
 #[test]
+fn opening_repo_creates_missing_database_parent_before_locking() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("new-database-directory");
+    let db_path = parent.join("store.db");
+
+    let _repo = SqliteRepo::open(&db_path)
+        .unwrap_or_else(|error| panic!("failed to open database under a missing parent: {error}"));
+
+    assert!(parent.is_dir());
+    assert!(db_path.is_file());
+}
+
+#[test]
+fn opening_repo_reports_database_directory_creation_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("not-a-directory");
+    std::fs::write(&blocker, b"blocker").unwrap();
+    let db_path = blocker.join("store.db");
+
+    let error = match SqliteRepo::open(&db_path) {
+        Ok(_) => panic!("opening database unexpectedly succeeded under a file"),
+        Err(error) => error.to_string(),
+    };
+
+    assert!(
+        error.contains("cannot create database directory"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains(&blocker.display().to_string()),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn opening_repo_reports_lock_file_open_failure_with_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("store.db");
+    let lock_path = dir.path().join(".store.db-ilearned.lock");
+    std::fs::create_dir(&lock_path).unwrap();
+
+    let error = match SqliteRepo::open(&db_path) {
+        Ok(_) => panic!("opening database unexpectedly succeeded with a directory as lock file"),
+        Err(error) => error.to_string(),
+    };
+
+    assert!(
+        error.contains("cannot open database lock file"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains(&lock_path.display().to_string()),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn crud_roundtrip_unix_epoch() {
     let (_d, repo) = open_repo();
     let e = exp("rust", "a1", 0, State::Active);

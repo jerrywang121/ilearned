@@ -333,6 +333,34 @@ impl FileConfig {
             })
     }
 
+    /// Initialize a local config and create an ignore-all file beside it if missing.
+    pub fn init_local(path: &Path, db_path: &str, force: bool) -> Result<(), AppError> {
+        Self::init(path, db_path, force)?;
+
+        let ignore_path = path.with_file_name(".gitignore");
+        let mut file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&ignore_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            Err(error) => {
+                return Err(AppError::Storage(format!(
+                    "cannot create local .gitignore {}: {error}",
+                    ignore_path.display()
+                )))
+            }
+        };
+
+        file.write_all(b"*\n").map_err(|error| {
+            AppError::Storage(format!(
+                "cannot write local .gitignore {}: {error}",
+                ignore_path.display()
+            ))
+        })
+    }
+
     fn load_path(path: &Path) -> Result<Option<Self>, AppError> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
