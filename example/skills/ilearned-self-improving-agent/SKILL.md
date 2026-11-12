@@ -92,7 +92,6 @@ Do not present a guess as a proven fix.
 - **Promote** only when the rule was applied **and** the outcome matched the `check` (or produced clear positive evidence inside its stated scope).
 - **Demote** only when the rule was applied **and** caused a failure inside its stated scope.
 - Count **one distinct outcome**, not reads, retries, or successful memory writes.
-- Before demoting, inspect current `good_count` / `bad_count` and the configured `auto_delete_threshold` (default 0.3). Confirm with the user if the demote would delete the rule.
 - Prefer refining a still-valid rule with `update` over deleting and recreating when possible.
 
 ### 6. Report briefly and keep authority boundaries
